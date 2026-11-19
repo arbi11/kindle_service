@@ -40,9 +40,12 @@ let state = null, items = [], view = 'today', currentItem = null, currentEdition
 let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme = localStorage.getItem('readerTheme') || 'light';
 let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
 let refreshEpoch = 0;
-let activeJob = null, knownJobIds = new Set(), sourceKind = 'youtube', searchTimer;
+let activeJob = null, knownJobIds = new Set(), searchTimer;
 let digestConnection = 'all', previewItemId = null, readerReturnScroll = 0;
 let connectionsTab = 'yours';
+let expandedConnection = null, connectionRailScroll = 0;
+const connectionDrafts = new Map();
+let raindropCollections = [];
 const dialog = $('#modal');
 
 async function api(path, method='GET', body) {
@@ -78,31 +81,39 @@ function navigation(next) {
   if (next !== 'library') filters = {kind:'all',status:'all',q:''};
   window.scrollTo(0,0); refresh().catch(e => toast(e.message,true));
 }
+function connectionFilterButtons() {
+  const connections = [['all','layers','All connections'], ...(state.catalogue || [])
+    .filter(connection => connection.source_count || items.some(item => itemConnection(item) === connection.id))
+    .map(connection => [connection.id,connection.icon,connection.name])];
+  return connections.map(([id,i,title]) => `<button data-connection="${id}" aria-label="${title}" class="${digestConnection===id?'active':''}" aria-pressed="${digestConnection===id}">${icon(i)}<span>${title}</span></button>`).join('');
+}
 function render() {
   if (!state) return;
   if (currentItem) { renderReader(); return; }
-  const connections = [['all','home','All articles'], ...(state.catalogue || [])
-    .filter(connection => connection.source_count || items.some(item => itemConnection(item) === connection.id))
-    .map(connection => [connection.id,connection.icon,connection.name])];
-  const tools = [['library','book','Library'],['sources','layers','Manage connections'],['delivery','mail','Delivery'],['settings','settings','Settings']];
+  captureConnectionDraft();
+  const pages = [['today','home','Today'],['library','book','Library'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
   const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
   $('#app').innerHTML = `
     <div class="shell digest-shell">
       <aside class="sidebar">
         <div class="digest-brand">${icon('book')}<span>Daily Edition</span></div>
-        <div class="nav-label" id="connections-label">Connections</div>
-        <nav class="nav connection-nav" aria-labelledby="connections-label">
-          ${connections.map(([id,i,title]) => `<button data-connection="${id}" aria-label="${title}" class="${view==='today'&&!currentEdition&&digestConnection===id?'active':''}" ${view==='today'&&!currentEdition&&digestConnection===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
+        <div class="nav-label" id="reading-room-label">Your reading room</div>
+        <nav class="nav primary-nav" aria-labelledby="reading-room-label">
+          ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span>${id==='library'&&state.stats.unread?`<span class="badge">${state.stats.unread}</span>`:''}</button>`).join('')}
         </nav>
+        <div class="story-filters">
+        <div class="nav-label" id="story-filters-label">Filter stories</div>
+        <nav class="nav connection-nav" aria-labelledby="story-filters-label">
+          ${connectionFilterButtons()}
+        </nav>
+        </div>
         <div class="sidebar-foot">
-          <nav class="nav utility-nav" aria-label="App settings and library">
-            ${tools.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
-          </nav>
           <div class="version"><span class="local-pill"><i class="dot"></i> On this device</span><span>v${esc(state.version)}</span></div>
         </div>
       </aside>
-      <main class="main" id="main-content">${page}</main>
+      <div class="workspace"><main class="main" id="main-content">${page}</main>${connectionsRail()}</div>
     </div>`;
+  restoreConnectionDraft();
   updateTask();
 }
 function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
@@ -120,8 +131,9 @@ function itemConnection(item) {
   // Offline examples demonstrate the two connections without connecting an account.
   return item.is_sample ? 'raindrop' : null;
 }
+function connectionItems() { return items.filter(item => digestConnection === 'all' || itemConnection(item) === digestConnection); }
 function digestItems() {
-  return items.filter(item => digestConnection === 'all' || itemConnection(item) === digestConnection)
+  return connectionItems()
     .sort((a,b) => (Date.parse(b.published) || Date.parse(b.created_at) || 0) - (Date.parse(a.published) || Date.parse(a.created_at) || 0));
 }
 function previewContent(item) {
@@ -154,9 +166,49 @@ function digestArticle(item) {
     </section>
   </article>`;
 }
-function readingRail() {
-  const s = state.settings;
-  return `<aside class="rail" aria-label="Your reading routine"><div class="rail-card"><div class="small-label">A little daily ritual</div><h3 style="margin-top:10px">Make time for a good read.</h3><div class="label">YOUR DAILY READING BUDGET</div><div class="value">${s.reading_minutes} <span style="font-size:13px">minutes</span></div><div class="line"></div><div class="routine-row"><span>Following</span><strong>${state.sources.filter(x=>x.enabled).length} sources</strong></div><div class="routine-row"><span>Ready to read</span><strong>${state.stats.unread} pieces</strong></div><div class="routine-row"><span>Delivery</span><strong>${s.schedule_enabled?'Scheduled':'On your time'}</strong></div><div class="line"></div><button class="text-btn" data-nav="delivery">Set your routine ${icon('arrow')}</button></div><div class="quote-card"><div class="quote-mark">“</div><blockquote>Attention is the beginning of a good read.</blockquote><div class="caption">A small reminder to slow down</div></div></aside>`;
+function captureConnectionDraft() {
+  const form = $('#rail-source-form');
+  if (form) connectionDrafts.set(form.dataset.connectionId, readForm(form));
+  const rail = $('.connection-rail');
+  if (rail) connectionRailScroll = rail.scrollTop;
+}
+function restoreConnectionDraft() {
+  const form = $('#rail-source-form'), values = form && connectionDrafts.get(form.dataset.connectionId);
+  if (values) for (const element of form.elements) if (element.name in values) element.value = values[element.name];
+  const rail = $('.connection-rail');
+  if (rail) rail.scrollTop = connectionRailScroll;
+}
+function connectionPanel(connection) {
+  const sources = state.sources.filter(source => source.kind === connection.id);
+  const active = sources.filter(source => source.enabled).length;
+  const open = expandedConnection === connection.id;
+  const status = !sources.length ? 'Not connected' : !active ? 'Paused' : connection.setup==='feed' ? 'Connected' : `${active} ${connection.id==='youtube'?(active===1?'channel':'channels'):(active===1?'collection':'collections')}`;
+  return `<section class="rail-connection" data-rail-connection="${esc(connection.id)}">
+    <h3><button id="connection-toggle-${esc(connection.id)}" class="connection-toggle" data-action="expand-connection" data-id="${esc(connection.id)}" aria-label="${esc(connection.name)} settings" aria-expanded="${open}" aria-controls="connection-options-${esc(connection.id)}">${icon(connection.icon)}<span><strong>${esc(connection.name)}</strong><small>${esc(status)}</small></span>${icon('chevron')}</button></h3>
+    <div id="connection-options-${esc(connection.id)}" class="connection-options" role="region" aria-labelledby="connection-toggle-${esc(connection.id)}" ${open?'':'hidden'}>${open?`
+      <p class="connection-description">${esc(connection.description)}</p>
+      ${sources.length?`<div class="rail-source-list">${sources.map(sourceRow).join('')}</div>`:''}
+      ${connection.setup==='feed'?(sources.length?'':`<form id="rail-feed-form" data-connection-id="${esc(connection.id)}"><p class="hint">No account needed. Fetch articles when you are ready.</p><button class="btn secondary small" type="submit">Connect ${esc(connection.name)}</button><div class="form-feedback" role="status"></div></form>`):`
+        <form id="rail-source-form" data-connection-id="${esc(connection.id)}" data-source-kind="${esc(connection.id)}">
+          ${sources.length?`<h4>${connection.id==='youtube'?'Add a channel':'Add a collection'}</h4>`:''}
+          ${sourceFields(connection.id,'rail')}
+          <button class="btn secondary small" type="submit">${connection.id==='youtube'?'Follow channel':'Follow collection'}</button><div class="form-feedback" role="status"></div>
+        </form>`}
+    `:''}</div>
+  </section>`;
+}
+function connectionsRail() {
+  return `<aside class="connection-rail" aria-labelledby="connection-rail-title"><header class="connection-rail-heading"><h2 id="connection-rail-title">Connections</h2><p>Select one to view its settings.</p></header><div class="rail-connections">${(state.catalogue || []).map(connectionPanel).join('')}</div><button class="text-btn catalogue-link" data-nav="sources">Browse connections ${icon('arrow')}</button></aside>`;
+}
+function renderConnectionRail() {
+  if (!$('.connection-rail')) return;
+  captureConnectionDraft();$('.connection-rail').outerHTML=connectionsRail();restoreConnectionDraft();updateTask();
+}
+async function refreshConnections() {
+  await refresh(false);
+  if(['settings','delivery'].includes(view)&&!currentItem) {
+    $('.connection-nav').innerHTML=connectionFilterButtons();renderConnectionRail();
+  } else render();
 }
 function todayPage() {
   const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
@@ -168,10 +220,10 @@ function todayPage() {
       <div class="digest-toolbar"><div class="digest-context"><span>${connection}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'article':'articles'}</span></div><label class="digest-sort" for="digest-sort"><span>Sort by</span><select id="digest-sort"><option value="recent">Most recent</option><option value="relevant" disabled>Most relevant</option></select></label></div>
       <div class="digest-list">${articles.map(digestArticle).join('') || `<div class="digest-empty"><h2>No articles here yet</h2><p>${digestConnection==='all'?'Articles from your connections will appear here.':`Articles from ${connection} will appear here.`}</p></div>`}</div>
     </section>
-    ${readingRail()}
   </div>`;
 }
 function libraryPage() {
+  const items = connectionItems();
   return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
 }
 function sourceRow(source) {
@@ -222,9 +274,9 @@ function connectionSetup(id) {
   if (connection.setup!=='feed') {showSourceModal(connection.id);return;}
   modal(`<h2 id="modal-title">Connect ${esc(connection.name)}</h2><p class="description">${esc(connection.description)}</p><div class="connection-access"><h3>What this connection accesses</h3><ul>${connection.permissions.map(permission=>`<li>${esc(permission)}</li>`).join('')}</ul></div><p class="description">Articles use your existing reading and summary settings. You can pause or disconnect this feed at any time.</p><form id="feed-connection-form" data-connection-id="${esc(connection.id)}"><div id="modal-feedback"></div><button class="btn full" type="submit">Connect ${esc(connection.name)}</button></form>`,'ADD CONNECTION');
 }
-function field(name,label,value,type='text',hint='',extra='') { return `<div class="field ${extra}"><label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${esc(value)}" ${type==='email'&&name.endsWith('_to')?'multiple':''} ${type==='number'?'inputmode="numeric"':''}>${hint?`<span class="hint">${hint}</span>`:''}</div>`; }
+function field(name,label,value,type='text',hint='',extra='',prefix='f') { return `<div class="field ${extra}"><label for="${prefix}-${name}">${label}</label><input id="${prefix}-${name}" name="${name}" type="${type}" value="${esc(value)}" ${type==='email'&&name.endsWith('_to')?'multiple':''} ${type==='number'?'inputmode="numeric"':''}>${hint?`<span class="hint">${hint}</span>`:''}</div>`; }
 function check(name,label,description,checked) { return `<label class="checkbox-row"><input type="checkbox" name="${name}" ${checked?'checked':''}><span>${label}${description?`<small>${description}</small>`:''}</span></label>`; }
-function credential(name,label,placeholder,hint='') { const saved = state.secrets.configured[name];return `<div class="field full"><label for="f-${name}">${label}</label><input autocomplete="new-password" id="f-${name}" name="${name}" type="password" placeholder="${saved?'Saved · leave blank to keep it':esc(placeholder)}"><span class="hint">${hint}</span>${saved?`<span class="key-state">${icon('lock')} Stored in your ${esc(state.secrets.storage)} <button class="text-btn" type="button" data-action="clear-secret" data-name="${name}">Remove</button></span>`:''}</div>`; }
+function credential(name,label,placeholder,hint='',prefix='f') { const saved = state.secrets.configured[name];return `<div class="field full"><label for="${prefix}-${name}">${label}</label><input autocomplete="new-password" id="${prefix}-${name}" name="${name}" type="password" placeholder="${saved?'Saved · leave blank to keep it':esc(placeholder)}"><span class="hint">${hint}</span>${saved?`<span class="key-state">${icon('lock')} Stored in your ${esc(state.secrets.storage)} <button class="text-btn" type="button" data-action="clear-secret" data-name="${name}">Remove</button></span>`:''}</div>`; }
 function settingsRail() { return `<aside class="settings-rail"><h3 class="rail-heading">A library that belongs to you.</h3><p>Sources, articles and reading history stay on this device. There’s no Daily Edition account to create.</p><ul class="privacy-list"><li>${icon('check')} Your own API key</li><li>${icon('check')} Direct provider connections</li><li>${icon('check')} No analytics or tracking</li><li>${icon('check')} Read offline once prepared</li></ul><p class="footnote">When you enable summaries, source text is sent directly to your chosen AI provider. Email delivery uses your chosen mail provider.<br><br>Credentials use your ${esc(state.secrets.storage)}.</p></aside>`; }
 function settingsPage() {
   const s = state.settings;
@@ -243,7 +295,8 @@ async function openReader(id) {
   currentItem = await api('/items/'+id); readerTab = currentItem.summary_html?'summary':'original'; lastView=view; renderReader(); window.scrollTo(0,0);
 }
 function renderReader() {
-  const item=currentItem, queue=view==='today'?digestItems():items;
+  captureConnectionDraft();
+  const item=currentItem, queue=currentEdition?currentEdition.items:view==='today'?digestItems():connectionItems();
   const position=queue.findIndex(i=>i.id===item.id), next=position>=0?queue[position+1]:null;
   $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand">Daily Edition</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
 }
@@ -251,11 +304,18 @@ function modal(content, eyebrow='YOUR DAILY EDITION') {
   dialog.innerHTML=`<div class="modal-head"><span class="eyebrow">${eyebrow}</span><button class="icon-btn" data-action="close-modal" aria-label="Close">${icon('close')}</button></div><div class="modal-body">${content}</div>`;
   if (!dialog.open) dialog.showModal();
 }
+function sourceFields(kind,prefix='source') {
+  if(kind==='youtube') return `<div class="field"><label for="${prefix}-url">Channel URL or @handle</label><input id="${prefix}-url" name="url" placeholder="@YourFavouriteChannel" required><span class="hint">Follow recent uploads from this channel.</span></div>`;
+  if(kind==='article') return `<div class="field"><label for="${prefix}-url">Article URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://example.com/a-good-read" required><span class="hint">Publicly accessible articles work best. Sign-in and paywalls may prevent extraction.</span></div>`;
+  return `${credential('raindrop_token','Raindrop token','Paste your personal test token',`Get a token from <a href="https://app.raindrop.io/settings/integrations" target="_blank" rel="noopener noreferrer">Raindrop’s integrations settings ↗</a>. It stays on this device.`,prefix)}
+    <button class="text-btn check-raindrop" type="button" data-action="test-raindrop">${icon('check')} Check connection & load collections</button>
+    <div class="field"><label for="${prefix}-collection">Collection</label><select name="collection_id" id="${prefix}-collection"><option value="0">All saved articles</option><option value="-1">Unsorted</option>${raindropCollections.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('')}</select></div>
+    ${field('collection_name','Display name','Saved articles','text','','',prefix)}
+    ${field('tags','Filter by tags (optional)','','text','Comma-separated tags. A bookmark can match any one.','',prefix)}`;
+}
 function showSourceModal(kind='youtube') {
-  sourceKind=kind;
   const types=[['youtube','video','YouTube'],['raindrop','cloud','Raindrop'],['article','article','Article']];
-  const s = state.secrets.configured;
-  modal(`<h2 id="modal-title">A few good sources.</h2><p class="description">Choose what you want to keep up with. You can pause or remove a source at any time.</p><div class="source-tabs">${types.map(([id,i,label])=>`<button data-action="source-tab" data-value="${id}" class="${id===kind?'active':''}">${icon(i)}${label}</button>`).join('')}</div><form id="source-form">${kind==='youtube'?'<div class="field"><label for="source-url">Channel URL or @handle</label><input id="source-url" name="url" placeholder="@YourFavouriteChannel" required><span class="hint">Follow a channel’s recent uploads. Captions are used when available.</span></div>':kind==='article'?'<div class="field"><label for="source-url">Article URL</label><input id="source-url" name="url" type="url" placeholder="https://example.com/a-good-read" required><span class="hint">Publicly accessible articles work best. Sign-in and paywalls may prevent extraction.</span></div>':`${credential('raindrop_token','Raindrop token','Paste your personal test token',`Create a token in <a href="https://app.raindrop.io/settings/integrations" target="_blank" rel="noopener noreferrer">Raindrop’s integrations settings ↗</a>. It stays on this device.`)}<div class="field"><label for="source-collection">Collection</label><select name="collection_id" id="source-collection"><option value="0">All saved articles</option><option value="-1">Unsorted</option></select><span class="hint">${s.raindrop_token?'Use Check connection to load your collections.':'Save a token to connect your account.'}</span></div>${field('collection_name','Display name','Saved articles')}${field('tags','Filter by tags (optional)','','text','Comma-separated tags. A bookmark can match any one.')}<button class="btn secondary small" type="button" data-action="test-raindrop">${icon('check')} Check connection & load collections</button>`}<div id="modal-feedback"></div><button class="btn full" type="submit">${icon('plus')} ${kind==='youtube'?'Follow channel':kind==='raindrop'?'Follow collection':'Add article'}</button></form>`,'FOLLOW WHAT MATTERS');
+  modal(`<h2 id="modal-title">A few good sources.</h2><p class="description">Choose what you want to keep up with. You can pause or remove a source at any time.</p><div class="source-tabs">${types.map(([id,i,label])=>`<button data-action="source-tab" data-value="${id}" class="${id===kind?'active':''}">${icon(i)}${label}</button>`).join('')}</div><form id="source-form" data-source-kind="${kind}">${sourceFields(kind)}<div id="modal-feedback" class="form-feedback" role="status"></div><button class="btn full" type="submit">${icon('plus')} ${kind==='youtube'?'Follow channel':kind==='raindrop'?'Follow collection':'Add article'}</button></form>`,'FOLLOW WHAT MATTERS');
 }
 function setupModal() {
   modal(`<h2 id="modal-title">Make room for your kind of reading.</h2><p class="description">Start with your AI key and a few interests. Then choose your sources. You can read saved articles without an AI key, too.</p><form id="setup-form"><div class="field"><label for="setup-provider">AI provider</label><select id="setup-provider" name="provider"><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></div><div class="field"><label for="setup-key">API key (optional for articles)</label><input id="setup-key" name="api_key" type="password" autocomplete="new-password" placeholder="Your own provider key"><span class="hint">AI usage is billed directly by your provider.</span></div><div class="field"><label for="setup-interests">What do you enjoy reading about?</label><textarea id="setup-interests" name="interests" placeholder="A few topics, in your own words…">${esc(state.settings.interests)}</textarea></div><div id="modal-feedback"></div><button class="btn full" type="submit">Choose your sources ${icon('arrow')}</button></form>${state.legacy_available?'<div style="text-align:center;margin-top:20px"><button class="text-btn" data-action="import">Or import your existing laptop setup</button></div>':''}`,'A LITTLE MORE YOU');
@@ -273,7 +333,7 @@ async function startTask(kind,payload={}) {
 function updateTask() {
   const job=state.jobs.find(j=>['queued','running'].includes(j.status));
   $('#task').innerHTML=job?`<div class="task-card"><p><span class="spinner"></span>${esc(job.message)}</p><div class="task-track"><span style="width:${Math.max(4,job.progress)}%"></span></div></div>`:'';
-  document.querySelectorAll('[data-action="prepare"],[data-action="fetch-source"]').forEach(button=>{
+  document.querySelectorAll('[data-action="prepare"],[data-action="fetch-source"],[data-action="test-raindrop"],#rail-source-form [type="submit"]').forEach(button=>{
     const paused=button.dataset.action==='fetch-source'&&!state.sources.find(source=>source.id===button.dataset.id)?.enabled;
     button.disabled=Boolean(job)||paused;
   });
@@ -287,12 +347,16 @@ async function poll() {
     for(const job of finished) {
       const result=JSON.parse(job.result||'{}');
       toast(job.message,job.status!=='done',result.edition_id);
-      if(job.kind==='test_raindrop'&&job.status==='done'&&$('#source-collection')) {
-        const select=$('#source-collection');
-        select.innerHTML='<option value="0">All saved articles</option><option value="-1">Unsorted</option>'+(result.collections||[]).map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
+      if(job.kind==='test_raindrop'&&job.status==='done') {
+        raindropCollections=result.collections || [];
+        document.querySelectorAll('select[name="collection_id"]').forEach(select=>{
+          const chosen=select.value;
+          select.innerHTML='<option value="0">All saved articles</option><option value="-1">Unsorted</option>'+raindropCollections.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
+          select.value=chosen;
+        });
       }
     }
-    if(finished.some(j=>['prepare','add_youtube','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open&&!['settings','delivery'].includes(view)) await refresh();
+    if(finished.some(j=>['prepare','add_youtube','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open) await refreshConnections();
   } catch(e) { /* An app shutdown or a brief local interruption should not erase the reader. */ }
 }
 function readForm(form) { const values={}; for(const element of form.elements) if(element.name) values[element.name]=element.type==='checkbox'?element.checked:element.type==='number'?Number(element.value):element.value; return values; }
@@ -307,12 +371,13 @@ async function saveSettingsForm(form,quiet=false) {
   if(!quiet) {toast('Your preferences are saved.');await refresh();}
 }
 document.addEventListener('submit',async event=>{
-  const form=event.target;if(!['source-form','settings-form','delivery-form','setup-form','feed-connection-form'].includes(form.id)) return;
+  const form=event.target;if(!['source-form','rail-source-form','settings-form','delivery-form','setup-form','feed-connection-form','rail-feed-form'].includes(form.id)) return;
   event.preventDefault();const button=$('[type="submit"]',form);if(button) button.disabled=true;
+  const feedback=$('.form-feedback',form);if(feedback) feedback.innerHTML='';
   try {
-    if(form.id==='feed-connection-form') {
+    if(['feed-connection-form','rail-feed-form'].includes(form.id)) {
       const result=await api('/sources','POST',{kind:form.dataset.connectionId});
-      dialog.close();connectionsTab='yours';await refresh();toast(result.message);
+      dialog.close();connectionsTab='yours';await refreshConnections();toast(result.message);
     }
     else if(['settings-form','delivery-form'].includes(form.id)) await saveSettingsForm(form);
     else if(form.id==='setup-form') {
@@ -320,16 +385,17 @@ document.addEventListener('submit',async event=>{
       await api('/settings','POST',{settings:{provider:values.provider,model:values.provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,onboarding_done:true},credentials});
       dialog.close();await refresh(false);navigation('sources');showSourceModal();
     } else {
-      const values=readForm(form);
-      if(sourceKind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
-      const body=sourceKind==='raindrop'?{kind:sourceKind,collection_id:Number(values.collection_id),title:values.collection_name||$('#source-collection option:checked')?.textContent||'Saved articles',tags:values.tags.split(',').map(t=>t.trim()).filter(Boolean)}:{kind:sourceKind,url:values.url};
+      const values=readForm(form), kind=form.dataset.sourceKind;
+      if(kind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
+      const body=kind==='raindrop'?{kind,collection_id:Number(values.collection_id),title:values.collection_name||$('select[name="collection_id"] option:checked',form)?.textContent||'Saved articles',tags:values.tags.split(',').map(t=>t.trim()).filter(Boolean)}:{kind,url:values.url};
       const result=await api('/sources','POST',body);dialog.close();connectionsTab='yours';
+      form.reset();connectionDrafts.delete(kind);
       if(result.job_id) activeJob=result.job_id;else toast(result.message);
-      await refresh();updateTask();
+      await refreshConnections();updateTask();
     }
   } catch(e) {
-    const feedback=$('#modal-feedback');if(dialog.open&&feedback) feedback.innerHTML=`<div class="modal-error">${esc(e.message)}</div>`;else toast(e.message,true);
-  } finally {if(button?.isConnected) button.disabled=false;}
+    const feedback=$('.form-feedback',form)||$('#modal-feedback');if(feedback) feedback.innerHTML=`<div class="modal-error">${esc(e.message)}</div>`;else toast(e.message,true);
+  } finally {if(button?.isConnected) button.disabled=false;updateTask();}
 });
 document.addEventListener('click',async event=>{
   const target=event.target.closest('[data-action],[data-nav],[data-filter],[data-connection]');if(!target) return;
@@ -337,13 +403,18 @@ document.addEventListener('click',async event=>{
   try {
     if(target.dataset.connection) {
       digestConnection=target.dataset.connection;
-      navigation('today');
+      navigation(view==='library'?'library':'today');
       return;
     }
     if(target.dataset.nav) {navigation(target.dataset.nav);return;}
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
     if(a==='close-modal') dialog.close();
+    else if(a==='expand-connection') {
+      captureConnectionDraft();expandedConnection=expandedConnection===id?null:id;
+      renderConnectionRail();
+      document.getElementById('connection-toggle-'+id)?.focus({preventScroll:true});
+    }
     else if(a==='connections-tab') {connectionsTab=target.dataset.value;render();$('#connections-'+connectionsTab+'-tab')?.focus({preventScroll:true});}
     else if(a==='connection-setup') connectionSetup(id);
     else if(a==='manage-connection') {connectionsTab='yours';render();document.querySelector('.connection-group[data-connection-id="'+id+'"]')?.scrollIntoView({block:'nearest'});}
@@ -373,16 +444,24 @@ document.addEventListener('click',async event=>{
     else if(a==='font-smaller'||a==='font-larger') {readerSize=Math.min(28,Math.max(16,readerSize+(a==='font-larger'?1:-1)));localStorage.setItem('readerSize',readerSize);await api('/settings','POST',{settings:{reader_size:readerSize}});$('.reader-shell').style.setProperty('--reader-size',readerSize+'px');}
     else if(a==='star') {const item=currentItem?.id===id?currentItem:items.find(i=>i.id===id)||currentEdition?.items.find(i=>i.id===id);if(item){const value=!item.starred;await api('/items/'+id,'PATCH',{starred:value});item.starred=value?1:0;if(currentItem) {const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}else await refresh();}}
     else if(a==='mark-read') {await api('/items/'+id,'PATCH',{is_read:true});currentItem.is_read=1;target.innerHTML=icon('check')+' Read';target.classList.add('secondary');toast('Marked as read.');}
-    else if(a==='toggle-source') {const source=state.sources.find(s=>s.id===id);await api('/sources/'+id,'PATCH',{enabled:!source.enabled});await refresh();}
+    else if(a==='toggle-source') {const source=state.sources.find(s=>s.id===id);await api('/sources/'+id,'PATCH',{enabled:!source.enabled});await refreshConnections();}
     else if(a==='remove-source') {const source=state.sources.find(s=>s.id===id);modal(`<h2 id="modal-title">Stop following this source?</h2><p class="description">${esc(source.title)}<br>Reading already in your library stays available.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep following</button><button class="btn danger" data-action="confirm-remove-source" data-id="${id}">Remove source</button></div>`);}
-    else if(a==='confirm-remove-source') {await api('/sources/'+id,'DELETE',{});dialog.close();await refresh();toast('Source removed. Your saved reading stays in the library.');}
+    else if(a==='confirm-remove-source') {await api('/sources/'+id,'DELETE',{});dialog.close();await refreshConnections();toast('Source removed. Your saved reading stays in the library.');}
     else if(a==='send') await sendModal(id);
     else if(a==='send-latest') {await saveSettingsForm($('#delivery-form'),true);const edition=latestEdition();if(edition) await sendModal(edition.id);else toast('Prepare an edition first.');}
     else if(a==='resolve-delivery') {await api('/deliveries/'+id+'/resolve','POST',{resolution:target.dataset.value});await refresh();toast(target.dataset.value==='sent'?'Receipt confirmed.':'Retry allowed. Check your mailbox before sending this edition again.');}
     else if(a==='confirm-send') {dialog.close();await startTask('send',{edition_id:id});}
     else if(a==='test-ai') {await saveSettingsForm($('#settings-form'),true);await startTask('test_ai');}
     else if(a==='test-smtp') {await saveSettingsForm($('#delivery-form'),true);await startTask('test_smtp');}
-    else if(a==='test-raindrop') {const input=$('input[name="raindrop_token"]',dialog);if(input?.value) await api('/settings','POST',{credentials:{raindrop_token:input.value}});await startTask('test_raindrop');}
+    else if(a==='test-raindrop') {
+      const form=target.closest('form'), input=$('input[name="raindrop_token"]',form);
+      const feedback=$('.form-feedback',form);if(feedback) feedback.innerHTML='';
+      if(input?.value) {
+        await api('/settings','POST',{credentials:{raindrop_token:input.value}});
+        input.value='';input.placeholder='Saved · leave blank to keep it';captureConnectionDraft();
+      }
+      await startTask('test_raindrop');
+    }
     else if(a==='clear-secret') {modal(`<h2 id="modal-title">Remove this saved credential?</h2><p class="description">Requests that need this credential will pause until you add it again.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep it</button><button class="btn danger" data-action="confirm-clear-secret" data-name="${esc(target.dataset.name)}">Remove credential</button></div>`);}
     else if(a==='confirm-clear-secret') {await api('/settings','POST',{credentials:{[target.dataset.name]:''}});dialog.close();await refresh();toast('Saved credential removed.');}
   } catch(e) {toast(e.message,true);}
@@ -398,7 +477,7 @@ document.addEventListener('change',async event=>{
     const values=readForm($('#settings-form')),provider=event.target.value;
     state.settings={...state.settings,provider,model:provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,summary_words:values.summary_words,reading_minutes:values.reading_minutes,max_items_per_run:values.max_items_per_run,lookback_days:values.lookback_days,summarize_articles:values.summarize_articles,audio_fallback:values.audio_fallback,audio_minutes_per_video:values.audio_minutes_per_video};render();
   }
-  if(event.target.id==='source-collection') {const input=$('input[name="collection_name"]',dialog);if(input) input.value=event.target.selectedOptions[0].textContent;}
+  if(event.target.matches('select[name="collection_id"]')) {const input=$('input[name="collection_name"]',event.target.form);if(input) input.value=event.target.selectedOptions[0].textContent;}
   if(event.target.id==='epub-file'&&event.target.files[0]) {
     const file=event.target.files[0];event.target.value='';
     if(file.size>25*1024*1024) {toast('Choose an EPUB smaller than 25 MB.',true);return;}

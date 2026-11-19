@@ -32,7 +32,7 @@ with sqlite3.connect(sys.argv[1]) as db:
   page.on('pageerror',error=>errors.push(error.message));
   page.on('request',request=>{if(!request.url().startsWith('http://127.0.0.1:')&&!request.url().startsWith('data:'))externalRequests.push(request.url());});
   const shot=name=>page.screenshot({path:path.join(output,name+'.png'),fullPage:true});
-  const nav=async name=>{await page.getByRole('button',{name,exact:true}).first().click();await page.waitForFunction(name=>document.querySelector('.nav button.active')?.getAttribute('aria-label')===name,name);};
+  const nav=async name=>{await page.getByRole('button',{name,exact:true}).first().click();await page.waitForFunction(name=>[...document.querySelectorAll('.nav button.active')].some(button=>button.getAttribute('aria-label')===name),name);};
   const click=async(action,id)=>{await page.locator(`[data-action="${action}"]${id?`[data-id="${id}"]`:''}`).first().click();};
   try {
     await page.goto(`http://127.0.0.1:${runtime.port}/?session=${runtime.token}`);
@@ -46,10 +46,10 @@ with sqlite3.connect(sys.argv[1]) as db:
     await click('preview');await click('read');await page.locator('.prose').waitFor();
     assert.equal(await page.getByRole('button',{name:'Read next piece',exact:true}).count(),0);
     await click('reader-back');await page.locator('.article-preview:not([hidden])').waitFor();
-    assert.equal(await page.locator('[data-connection="youtube"]').getAttribute('aria-current'),'page');
+    assert.equal(await page.locator('[data-connection="youtube"]').getAttribute('aria-pressed'),'true');
     await page.getByRole('button',{name:'Raindrop',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===2);
-    await nav('All articles');
+    await nav('All connections');
     await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===3);
     assert.equal(await page.locator('#digest-sort').inputValue(),'recent');
     assert.equal(await page.locator('#digest-sort option[value="relevant"]').evaluate(option=>option.disabled),true);
@@ -79,7 +79,7 @@ with sqlite3.connect(sys.argv[1]) as db:
     await page.getByRole('heading',{name:'A little space for something good.'}).waitFor();
     await page.getByRole('textbox',{name:'Search your library'}).fill('');
     await page.waitForFunction(()=>document.querySelectorAll('.reading-card').length===3);await shot('03-library');
-    await nav('Manage connections');await click('add-article');
+    await nav('Sources');await click('add-article');
     await page.locator('[data-action="source-tab"][data-value="article"]').click();
     await page.getByLabel('Article URL',{exact:true}).fill(fixtureUrl);
     await page.getByRole('button',{name:'Add article',exact:true}).click();
@@ -89,7 +89,7 @@ with sqlite3.connect(sys.argv[1]) as db:
     await shot('04-sources');
     await nav('Library');await click('prepare');
     await page.getByText(/Your edition is ready: 1 pieces/).first().waitFor({timeout:30000});
-    await nav('All articles');
+    await nav('Today');await nav('All connections');
     await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===1);
     assert.match(await page.locator('.digest-title').innerText(),/A useful local reading test/);await shot('05-prepared');
     assert.equal(await page.locator('.connection-nav [data-connection="raindrop"]').count(),0);
@@ -128,12 +128,12 @@ with sqlite3.connect(sys.argv[1]) as db:
     assert.equal(boot.deliveries.length,0);assert.equal(boot.settings.schedule_enabled,false);
     assert.equal(boot.settings.summary_words,450);
     assert.equal(errors.length,0,errors.join('\n'));assert.equal(externalRequests.length,0,externalRequests.join('\n'));
-    await page.setViewportSize({width:1000,height:800});await nav('All articles');await shot('10-small-desktop');
-    assert.equal(await page.locator('.rail').isVisible(),true);
+    await page.setViewportSize({width:1000,height:800});await nav('All connections');await shot('10-small-desktop');
+    assert.equal(await page.locator('.connection-rail').isVisible(),true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.setViewportSize({width:900,height:700});
-    assert.equal(await page.locator('.rail').isVisible(),true);
+    assert.equal(await page.locator('.connection-rail').isVisible(),true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    console.log(JSON.stringify({result:'PASS',checks:['connection filtering and combined startup feed','inline previews and keyboard controls','expand and return to preview','reading panel at laptop widths','reader themes and font persistence','save and read state','search and filters','source creation and toggles','real local article extraction','edition generation','EPUB download','settings and secret masking','email preview without sending','no external browser requests','no JavaScript errors'],screenshots:output}));
+    console.log(JSON.stringify({result:'PASS',checks:['connection filtering and combined startup feed','inline previews and keyboard controls','expand and return to preview','connection panel at laptop widths','reader themes and font persistence','save and read state','search and filters','source creation and toggles','real local article extraction','edition generation','EPUB download','settings and secret masking','email preview without sending','no external browser requests','no JavaScript errors'],screenshots:output}));
   } finally {await browser.close();fixture.close();}
 })().catch(error=>{console.error(error.stack);process.exit(1);});

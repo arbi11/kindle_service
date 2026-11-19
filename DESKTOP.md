@@ -1,6 +1,6 @@
 # Daily Edition desktop
 
-Daily Edition is a free proprietary desktop reader. This 0.2.0 build runs on
+Daily Edition is a free proprietary desktop reader. This 0.2.1 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -11,7 +11,7 @@ remains proprietary. Contributors submit new connections and code updates throug
 GitHub pull requests. Review is required before a connection or new version is
 listed in the catalogue. Review can later be delegated to trusted maintainers.
 
-**Manage connections** has Your connections and Browse connections tabs. Browse
+**Sources → Manage connections** has Your connections and Browse connections tabs. Browse
 lists reviewed versions, descriptions and maintainers. Connect opens service setup
 and displays access information for public feeds. Connected services and services
 with saved reading appear in the left panel. Sources can be fetched, paused,
@@ -32,13 +32,16 @@ to validate the catalogue. The core app's copyright terms are unchanged.
 
 The app contains the agreed three-column layout:
 
-- **Connections** on the left: All articles and your reading services. A connection
-  filters the middle feed; All articles restores the combined feed.
+- **Navigation** on the left: Today, Library, Sources, Delivery and Settings, with
+  a separate Filter stories section underneath. A connection filters the digest
+  or library; All connections restores the combined reading list.
 - **Readers Digest** in the middle, with the date, a compact article list, and
   Most recent ordering. Selecting an article opens a preview beneath its title.
   Expand opens the existing reader; Back restores the feed and its open preview.
-- The existing reading budget, followed-source count, unread count, delivery
-  status, routine link, and quote on the right.
+- **Connections** on the right: every reviewed connection is listed. Selecting
+  one expands its settings in place, including channel or collection setup and
+  fetch, pause, resume and disconnect controls. The panel stays available while
+  navigating the app. The expanded reader uses the full window.
 
 Most relevant appears as an inactive sort option. Its ranking rules must be
 discussed before implementation. Configuration screens and Library retain their
@@ -69,10 +72,10 @@ this release.
 
 1. Open Daily Edition. Clearly labelled sample articles let you try the reader.
 2. In **Settings**, optionally add your AI key and reading interests.
-3. Open **Manage connections → Browse connections** and choose YouTube, Raindrop
-   or Freedium. Add channel URLs or @handles for YouTube; Raindrop uses a personal
-   token and selected collections. Freedium needs no account. Your connections
-   also retains Add an article by URL.
+3. Select YouTube, Raindrop or Freedium in the right-hand **Connections** panel.
+   Add channel URLs or @handles for YouTube; Raindrop uses a personal token and
+   selected collections. Freedium needs no account. **Sources → Browse connections**
+   also shows the reviewed catalogue; Your connections retains Add an article by URL.
 4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library
    to check all enabled sources. Reading is collected, summarized when applicable,
    and saved locally. Your reading budget and per-run cap keep editions manageable.
@@ -161,3 +164,7 @@ For the connection-specific browser checks, run an isolated fixture server with
 `node tests/connections_ui.cjs /temporary/connection-ui/runtime.json`. It tests
 catalogue setup, fetching, pause/resume, disconnection, filters and EPUB export
 using synthetic service responses. It blocks real mail and external network.
+
+With another fresh fixture profile, `node tests/panels_ui.cjs /temporary/panel-ui/runtime.json`
+checks the three-panel layout, inline connection setup, credential checks, story
+filters, keyboard controls, and preservation of unsaved forms during connection jobs.
