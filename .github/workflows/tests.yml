@@ -23,7 +23,20 @@ jobs:
             requirements.txt
             requirements-test.txt
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 4
+        run: |
+          if command -v ffmpeg && command -v ffprobe; then
+            exit 0
+          fi
+          # Avoid slow regional mirrors and unnecessary GPU/desktop packages.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          fi
+          if [ -f /etc/apt/apt-security-mirrors.txt ]; then
+            printf '%s\n' 'https://security.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-security-mirrors.txt > /dev/null
+          fi
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 install -y --no-install-recommends ffmpeg
       - name: Install test dependencies
         run: python -m pip install -r requirements-test.txt
       - name: Run offline tests
