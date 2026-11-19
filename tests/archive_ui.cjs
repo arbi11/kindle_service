@@ -16,7 +16,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   page.on('request',request=>{if(!request.url().startsWith('http://127.0.0.1:')&&!request.url().startsWith('data:'))external.push(request.url());});
   try {
     await page.goto(`http://127.0.0.1:${runtime.port}/?session=${runtime.token}`);
-    await page.getByRole('heading',{name:'Readers Digest',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'The Daily Quib',exact:true}).waitFor();
     const records=await page.evaluate(async()=>{
       const items=[];let offset=0;
       while(true) {
@@ -40,18 +40,24 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     await page.locator('.connection-nav [data-connection="all"]').click();
     await page.waitForFunction(count=>document.querySelectorAll('.digest-article').length===count,records.length);
     const oldest=sorted.at(-1);
-    await page.locator('.digest-title[data-id="'+oldest.id+'"]').click();
-    await page.locator('#preview-'+oldest.id+' [data-action="read"]').click();
+    const title=page.locator('.digest-title[data-id="'+oldest.id+'"]');
+    await title.scrollIntoViewIfNeeded();
+    const returnScroll=await page.evaluate(()=>window.scrollY);
+    await title.click();
     await page.locator('.prose').waitFor();
     assert.equal(await page.locator('.reader-content > h1').innerText(),oldest.title);
     const complete=await page.evaluate(html=>new DOMParser().parseFromString(html,'text/html').body.textContent.trim(),oldest.summary_html||oldest.body_html);
     assert.equal((await page.locator('.prose').textContent()).trim(),complete);
     await page.screenshot({path:path.join(output,'02-oldest-story.png')});
     await page.getByRole('button',{name:'Back to reading list',exact:true}).click();
+    await title.waitFor();
+    assert.ok(Math.abs((await page.evaluate(()=>window.scrollY))-returnScroll)<2,'Back restores the reading list position');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'title-'+oldest.id);
+    assert.equal(await page.locator('.article-preview,[data-action="preview"]').count(),0);
     await page.locator('.primary-nav [data-nav="library"]').click();
     await page.waitForFunction(count=>document.querySelectorAll('.reading-card').length===count,records.length);
     await page.screenshot({path:path.join(output,'03-full-library.png')});
     assert.equal(errors.length,0,errors.join('\n'));assert.equal(external.length,0,external.join('\n'));
-    console.log(JSON.stringify({result:'PASS',stories:records.length,connections:Object.fromEntries(['youtube','raindrop','freedium'].map(id=>[id,records.filter(item=>item.connection_id===id).length])),checks:['all history pages loaded','no duplicate story IDs','chronological order','connection filters','oldest full story and preview','full library','no browser network or script errors']}));
+    console.log(JSON.stringify({result:'PASS',stories:records.length,connections:Object.fromEntries(['youtube','raindrop','freedium'].map(id=>[id,records.filter(item=>item.connection_id===id).length])),checks:['all history pages loaded','no duplicate story IDs','chronological order','connection filters','oldest full story and return position','full library','no browser network or script errors']}));
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exit(1);});

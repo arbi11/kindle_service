@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.3 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.4 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -28,16 +28,17 @@ reviewed index. Custom executable adapters require reviewed app code and a relea
 See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
 to validate the catalogue. The core app's copyright terms are unchanged.
 
-## Readers Digest design preview
+## The Daily Quib design preview
 
 The app contains the agreed three-column layout:
 
 - **Navigation** on the left: Today, Library, Sources, Delivery and Settings, with
   a separate Filter stories section underneath. A connection filters the digest
   or library; All connections restores the combined reading list.
-- **Readers Digest** in the middle, with the date, a compact article list, and
-  Most recent ordering. Selecting an article opens a preview beneath its title.
-  Expand opens the existing reader; Back restores the feed and its open preview.
+- **The Daily Quib** in the middle, with the date, a compact article list, and
+  Most recent ordering. Each entry shows its title, source, excerpt and reading
+  time. Selecting it opens the full reader directly. Back restores the feed,
+  connection filter, keyboard focus and scroll position.
 - **Connections** on the right: every reviewed connection is listed. Selecting
   one expands its settings in place, including channel or collection setup and
   fetch, pause, resume and disconnect controls. The panel stays available while
@@ -79,7 +80,7 @@ this release.
 4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library
    to check all enabled sources. Reading is collected, summarized when applicable,
    and saved locally. Your reading budget and per-run cap keep editions manageable.
-5. Select an article for an inline preview and Expand for the full reader. Use the
+5. Select an article to open the full reader directly. Use the
    summary/full article or transcript tabs, text-size controls, theme button,
    bookmark button, and **Mark as read**. Preferences and reading state survive
    app restarts. The `/` shortcut opens library search; Escape returns from the reader.

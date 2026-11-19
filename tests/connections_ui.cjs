@@ -27,7 +27,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   },count,{timeout:30000});
   try {
     await page.goto(`http://127.0.0.1:${runtime.port}/?session=${runtime.token}`);
-    await page.getByRole('heading',{name:'Readers Digest',exact:true}).waitFor();
+    await page.getByRole('heading',{name:'The Daily Quib',exact:true}).waitFor();
     await manage();await page.getByRole('heading',{name:'No connections yet',exact:true}).waitFor();
     await browse();assert.equal(await page.locator('.catalogue-card').count(),3);
     assert.equal(await page.locator('.review-label').count(),3);await shot('01-browse-connections');
@@ -48,13 +48,12 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     assert.equal(state.sources.find(source=>source.kind==='freedium').error,'');
     await page.getByRole('button',{name:'Freedium',exact:true}).click();
     await page.locator('.digest-title').waitFor();assert.equal(await page.locator('.digest-article').count(),1);
-    await action('preview');
-    assert.match(await page.locator('.preview-prose').innerText(),/\$3 million/);
     await shot('04-freedium-reading-feed');
     await action('read');await page.locator('.prose').waitFor();
+    assert.match(await page.locator('.prose').innerText(),/\$3 million/);
     assert.match(await page.locator('.prose').innerText(),/\$2 million/);
     await action('star');await action('mark-read');await action('reader-back');
-    await page.locator('.digest-article.is-read .article-preview:not([hidden])').waitFor();
+    await page.locator('.digest-article.is-read').waitFor();
     await manage();
     await group('freedium').getByRole('switch').click();
     await group('freedium').getByRole('switch',{name:/Resume/}).waitFor();
@@ -101,6 +100,6 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     for(const width of [1000,900]) {await page.setViewportSize({width,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
     await shot('05-small-laptop-catalogue');
     assert.equal(errors.length,0,errors.join('\n'));assert.equal(external.length,0,external.join('\n'));
-    console.log(JSON.stringify({result:'PASS',checks:['catalogue and keyboard tabs','Freedium setup and fetching','inline preview and expanded reader','pause and resume','retry without duplicates','disconnect preserves reading','YouTube setup','Raindrop setup and fetching','connection filters and combined feed','EPUB export','persistent state','no secret disclosure','no real email or browser network'],screenshots:output}));
+    console.log(JSON.stringify({result:'PASS',checks:['catalogue and keyboard tabs','Freedium setup and fetching','direct full reader','pause and resume','retry without duplicates','disconnect preserves reading','YouTube setup','Raindrop setup and fetching','connection filters and combined feed','EPUB export','persistent state','no secret disclosure','no real email or browser network'],screenshots:output}));
   } catch(error) {await shot('failure');throw error;} finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exit(1);});

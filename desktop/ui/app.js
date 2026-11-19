@@ -41,7 +41,7 @@ let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme
 let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
 let refreshEpoch = 0;
 let activeJob = null, knownJobIds = new Set(), searchTimer;
-let digestConnection = 'all', previewItemId = null, readerReturnScroll = 0;
+let digestConnection = 'all', readerReturnItemId = null, readerReturnScroll = 0;
 let connectionsTab = 'yours';
 let expandedConnection = null, connectionRailScroll = 0;
 const connectionDrafts = new Map();
@@ -84,7 +84,6 @@ async function refresh(renderPage=true) {
 }
 function navigation(next) {
   view = next; currentItem = null; currentEdition = null;
-  previewItemId = null;
   if (next !== 'library') filters = {kind:'all',status:'all',q:''};
   window.scrollTo(0,0); refresh().catch(e => toast(e.message,true));
 }
@@ -143,34 +142,16 @@ function digestItems() {
   return connectionItems()
     .sort((a,b) => (Date.parse(b.published) || Date.parse(b.created_at) || 0) - (Date.parse(a.published) || Date.parse(a.created_at) || 0));
 }
-function previewContent(item) {
-  const document = new DOMParser().parseFromString(item.summary_html || item.body_html, 'text/html');
-  const paragraphs = [...document.querySelectorAll('p')].map(p => p.textContent.trim()).filter(Boolean);
-  const blocks = (paragraphs.length ? paragraphs : [document.body.textContent.trim()]).slice(0,2);
-  let remaining = 180;
-  return blocks.map(block => {
-    if (!remaining) return '';
-    const words = block.split(/\s+/), truncated = words.length > remaining;
-    const text = words.slice(0,remaining).join(' ');
-    remaining = Math.max(0, remaining - words.length);
-    return `<p>${esc(text)}${truncated?'…':''}</p>`;
-  }).join('');
-}
 function digestArticle(item) {
-  const expanded = previewItemId === item.id;
   const connection = itemConnection(item);
   const connectionName = state.catalogue?.find(c => c.id === connection)?.name;
-  return `<article class="digest-article ${expanded?'is-expanded':''} ${item.is_read?'is-read':''}" data-item-id="${esc(item.id)}">
-    <header class="digest-article-header" data-action="preview" data-id="${esc(item.id)}">
+  return `<article class="digest-article ${item.is_read?'is-read':''}" data-item-id="${esc(item.id)}">
+    <header class="digest-article-header" data-action="read" data-id="${esc(item.id)}">
       <div class="article-meta">${sourceIcon(item.kind)}${connectionName?`<span class="connection-name">${connectionName}</span><span class="meta-divider">·</span>`:''}<span>${esc(item.author || 'Saved article')}</span><span class="meta-divider">·</span><time datetime="${esc(item.published)}">${shortDate(item.published)}</time>${sample(item)}</div>
-      <h2><button class="digest-title" id="title-${esc(item.id)}" data-action="preview" data-id="${esc(item.id)}" aria-expanded="${expanded}" aria-controls="preview-${esc(item.id)}"><span>${esc(item.title)}</span>${icon('chevron')}</button></h2>
-      ${!expanded?`<p class="digest-excerpt">${esc(excerpt(item))}</p>`:''}
+      <h2><button class="digest-title" id="title-${esc(item.id)}" data-action="read" data-id="${esc(item.id)}" aria-label="Read ${esc(item.title)}" title="Open in reader"><span>${esc(item.title)}</span>${icon('arrow')}</button></h2>
+      <p class="digest-excerpt">${esc(excerpt(item))}</p>
       <div class="digest-item-info"><span>${minutes(item.words)} min read</span><span>${item.kind==='video'?'Video summary':'Article'}</span>${item.is_read?'<span>Read</span>':''}</div>
     </header>
-    <section class="article-preview" id="preview-${esc(item.id)}" aria-labelledby="title-${esc(item.id)}" ${expanded?'':'hidden'}>
-      <div class="preview-heading"><span>Preview</span><button class="text-btn expand-article" data-action="read" data-id="${esc(item.id)}">${icon('expand')} Expand</button></div>
-      <div class="preview-prose">${expanded?previewContent(item):''}</div>
-    </section>
   </article>`;
 }
 function captureConnectionDraft() {
@@ -223,7 +204,7 @@ function todayPage() {
   const connection = digestConnection==='all'?'All connections':state.catalogue?.find(c => c.id === digestConnection)?.name || 'Saved articles';
   return `<div class="digest-layout">
     <section class="digest-feed" aria-labelledby="digest-title">
-      <header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1 id="digest-title">Readers Digest</h1></header>
+      <header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1 id="digest-title">The Daily Quib</h1></header>
       <div class="digest-toolbar"><div class="digest-context"><span>${connection}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'article':'articles'}</span></div><label class="digest-sort" for="digest-sort"><span>Sort by</span><select id="digest-sort"><option value="recent">Most recent</option><option value="relevant" disabled>Most relevant</option></select></label></div>
       <div class="digest-list">${articles.map(digestArticle).join('') || `<div class="digest-empty"><h2>No articles here yet</h2><p>${digestConnection==='all'?'Articles from your connections will appear here.':`Articles from ${connection} will appear here.`}</p></div>`}</div>
     </section>
@@ -298,7 +279,7 @@ function editionPage() {
   return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to ${view==='library'?'library':'today'}</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
 }
 async function openReader(id) {
-  if (!currentItem) readerReturnScroll = window.scrollY;
+  if (!currentItem) { readerReturnScroll = window.scrollY; readerReturnItemId = id; }
   currentItem = await api('/items/'+id); readerTab = currentItem.summary_html?'summary':'original'; lastView=view; renderReader(); window.scrollTo(0,0);
 }
 function renderReader() {
@@ -435,17 +416,10 @@ document.addEventListener('click',async event=>{
     else if(a==='import') {modal(`<h2 id="modal-title">Bring your existing setup along.</h2><p class="description">Copy your laptop service’s sources, AI and email settings, delivery history identifiers, and up to eight recent editions into Quib27.</p><div class="setting-info">Your existing service keeps running. Automatic preparation and sending start paused in this app. Enable them in Delivery when you are ready to switch.</div><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep exploring</button><button class="btn" data-action="confirm-import">Import setup ${icon('arrow')}</button></div>`);}
     else if(a==='confirm-import') {dialog.close();await startTask('import_legacy');}
     else if(a==='upload') $('#epub-file').click();
-    else if(a==='preview') {
-      const scroll=window.scrollY;
-      previewItemId=previewItemId===id?null:id;
-      render();
-      window.scrollTo(0,scroll);
-      if(target.matches('button')) document.getElementById('title-'+id)?.focus({preventScroll:true});
-    }
     else if(a==='read') await openReader(id);
     else if(a==='edition') {currentEdition=await api('/editions/'+id);currentItem=null;render();window.scrollTo(0,0);}
     else if(a==='back-edition') {currentEdition=null;render();}
-    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);document.getElementById('title-'+previewItemId)?.focus({preventScroll:true});}
+    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);(document.getElementById('title-'+readerReturnItemId)||document.querySelector('[data-action="read"][data-id="'+CSS.escape(readerReturnItemId)+'"]'))?.focus({preventScroll:true});}
     else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
     else if(a==='reader-theme') {readerTheme={light:'sepia',sepia:'dark',dark:'light'}[readerTheme]||'light';localStorage.setItem('readerTheme',readerTheme);await api('/settings','POST',{settings:{reader_theme:readerTheme}});const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}
     else if(a==='font-smaller'||a==='font-larger') {readerSize=Math.min(28,Math.max(16,readerSize+(a==='font-larger'?1:-1)));localStorage.setItem('readerSize',readerSize);await api('/settings','POST',{settings:{reader_size:readerSize}});$('.reader-shell').style.setProperty('--reader-size',readerSize+'px');}
