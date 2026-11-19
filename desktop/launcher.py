@@ -12,6 +12,7 @@ import urllib.request
 
 
 def default_root():
+    # Keep the original data locations so a brand update reopens the same library.
     if sys.platform == "darwin":
         return Path.home() / "Library/Application Support/Daily Edition"
     if sys.platform == "win32":
@@ -41,9 +42,9 @@ def native_window(url, service, background=False, screenshot=None):
     from PySide6.QtWebEngineWidgets import QWebEngineView
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    app.setApplicationName("Daily Edition")
-    app.setDesktopFileName("daily-edition")
-    app.setOrganizationName("Daily Edition")
+    app.setApplicationName("Quib27")
+    app.setDesktopFileName("quib27")
+    app.setOrganizationName("Quib27")
     icon_path = Path(__file__).resolve().parent / "ui/icon.svg"
     app.setWindowIcon(QIcon(str(icon_path)))
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
@@ -64,13 +65,13 @@ def native_window(url, service, background=False, screenshot=None):
             if tray_available and active and not self.quitting:
                 self.hide()
                 event.ignore()
-                tray.showMessage("Daily Edition", "Your reading schedule is still running. Open the tray menu to quit.")
+                tray.showMessage("Quib27", "Your reading schedule is still running. Open the tray menu to quit.")
             else:
                 event.accept()
                 app.quit()
 
     window = Window()
-    window.setWindowTitle("Daily Edition — Connections preview")
+    window.setWindowTitle("Quib27")
     window.resize(1360, 900)
     window.setMinimumSize(900, 640)
     profile = QWebEngineProfile(window)  # Off-the-record profile; library lives in our database.
@@ -94,13 +95,13 @@ def native_window(url, service, background=False, screenshot=None):
     profile.downloadRequested.connect(download)
 
     tray = QSystemTrayIcon(QIcon(str(icon_path)), window)
-    tray.setToolTip("Daily Edition · your personal reading")
+    tray.setToolTip("Quib27 · your personal reading")
     menu = QMenu()
-    show = QAction("Open Daily Edition", menu)
+    show = QAction("Open Quib27", menu)
     show.triggered.connect(lambda: (window.showNormal(), window.raise_(), window.activateWindow()))
     menu.addAction(show)
     menu.addSeparator()
-    quit_action = QAction("Quit Daily Edition", menu)
+    quit_action = QAction("Quit Quib27", menu)
     def quit_app():
         if service and service.store.query("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1", one=True):
             QMessageBox.information(window, "A task is running", "Please let the current task finish before quitting.")
@@ -156,7 +157,7 @@ def main():
     except BlockingIOError:
         url = existing_runtime(root)
         if not url:
-            print("Daily Edition is starting. Please open it again in a moment.", file=sys.stderr)
+            print("Quib27 is starting. Please open it again in a moment.", file=sys.stderr)
             return 1
         if args.headless or args.background:
             return 0
@@ -166,7 +167,7 @@ def main():
         url = service.url
     try:
         if args.headless:
-            print("Daily Edition is running locally. Open the desktop app to read or change settings.", flush=True)
+            print("Quib27 is running locally. Open the desktop app to read or change settings.", flush=True)
             stopped = False
             def stop(*_):
                 nonlocal stopped

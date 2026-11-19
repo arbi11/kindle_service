@@ -57,8 +57,8 @@ def render_newsletter(edition):
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{escape(edition["title"])}</title></head><body style="margin:0;background:#f7f6f1;color:#272e27">'
             f'<main style="max-width:640px;margin:auto;padding:40px 24px;font:18px/1.75 Georgia,serif">'
-            f'<p style="font:12px Arial;letter-spacing:2px;color:#65745c">DAILY EDITION</p>'
+            f'<p style="font:12px Arial;letter-spacing:2px;color:#65745c">QUIB27</p>'
             f'<h1 style="font-size:36px;line-height:1.15">{escape(edition["title"])}</h1>'
             f'<p style="font:14px Arial;color:#777">{len(edition["items"])} good things to read. Your time, well spent.</p>'
             f'{"".join(sections)}<p style="font:12px Arial;color:#777;border-top:1px solid #ddd;padding-top:24px">'
-            f'Prepared on your device with Daily Edition.</p></main></body></html>')
+            f'Prepared on your device with Quib27.</p></main></body></html>')

@@ -294,7 +294,7 @@ class HTTPTests(unittest.TestCase):
             with zipfile.ZipFile(io.BytesIO(response.read())) as archive:
                 self.assertEqual(archive.read("mimetype"), b"application/epub+zip")
         with self.request("/api/editions/" + edition["id"] + "/html") as response:
-            self.assertIn(b"DAILY EDITION", response.read())
+            self.assertIn(b"QUIB27", response.read())
 
     def test_library_pagination_reaches_reading_beyond_both_200_and_500_items(self):
         with self.app.store.connect() as db:

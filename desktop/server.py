@@ -131,7 +131,7 @@ class Application:
         args = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve().parent.parent / "daily_edition.py")]
         args += ["--background", "--data-dir", str(self.store.root)]
         command = " ".join('"' + a.replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$") + '"' for a in args)
-        private_write(path, f"[Desktop Entry]\nType=Application\nName=Daily Edition\nExec={command}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
+        private_write(path, f"[Desktop Entry]\nType=Application\nName=Quib27\nExec={command}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
 
     def close(self):
         self.engine.close()
@@ -146,7 +146,7 @@ class Application:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "DailyEdition"
+    server_version = "Quib27"
 
     def log_message(self, *_):
         pass  # Never write session URLs, source text or credentials into request logs.
@@ -205,7 +205,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
         if not self.authorized():
-            self.json({"error": "Open Daily Edition from its desktop launcher to start a private session."}, 401)
+            self.json({"error": "Open Quib27 from its desktop launcher to start a private session."}, 401)
             return
         try:
             path = parsed.path

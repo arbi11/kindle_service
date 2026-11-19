@@ -35,7 +35,7 @@ def xhtml(title: str, body: str, language: str = "en") -> bytes:
 
 
 def write_epub(path: Path, title: str, chapters: list[tuple[str, str]], *,
-               author: str = "Daily Edition", language: str = "en", identifier: str | None = None,
+               author: str = "Quib27", language: str = "en", identifier: str | None = None,
                css: str = CSS, images: list[tuple[str, bytes]] | None = None) -> Path:
     if not chapters:
         raise ValueError("An edition needs at least one chapter")

@@ -1,6 +1,6 @@
 # Kindle Service
 
-The **Daily Edition desktop app** adds a local reading library, source setup,
+The **Quib27 desktop app** adds a local reading library, source setup,
 AI preferences, and email/Kindle delivery controls. See [desktop installation and
 usage](DESKTOP.md). The original command-line services are documented below.
 

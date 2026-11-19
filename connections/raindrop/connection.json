@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api_version": 1,
-  "maintainer": "Daily Edition · arbi11",
+  "maintainer": "Quib27 · arbi11",
   "id": "raindrop",
   "name": "Raindrop",
   "adapter": "raindrop",

@@ -1,6 +1,6 @@
-# Daily Edition desktop
+# Quib27 desktop
 
-Daily Edition is a free proprietary desktop reader. This 0.2.2 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.3 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -47,8 +47,8 @@ Most relevant appears as an inactive sort option. Its ranking rules must be
 discussed before implementation. Configuration screens and Library retain their
 existing functions.
 
-On the development laptop, open **Daily Edition Preview** from the applications
-menu or run `~/.local/bin/daily-edition-preview`. This uses a separate preview
+On the development laptop, open **Quib27** from the applications
+menu or run `~/.local/bin/quib27`. This uses a separate preview
 library with scheduling disabled. The installed v0.1 app is still **Daily Edition**.
 
 To run the preview from a prepared development checkout:
@@ -59,9 +59,9 @@ To run the preview from a prepared development checkout:
 
 ## Install the packaged app
 
-Extract the release archive, open its DailyEdition folder, and run `install.sh`.
-This installs the app into `~/.local/opt/daily-edition`, adds it to the application
-menu, and launches it. Alternatively, run the `DailyEdition` executable directly.
+Extract the release archive, open its Quib27 folder, and run `install.sh`.
+This installs the app into `~/.local/opt/quib27`, adds it to the application
+menu, and launches it. Alternatively, run the `Quib27` executable directly.
 The packaged application includes Python and the desktop dependencies.
 
 The app is currently built and tested on this Linux laptop. Windows and macOS
@@ -70,7 +70,7 @@ this release.
 
 ## First reading
 
-1. Open Daily Edition. Clearly labelled sample articles let you try the reader.
+1. Open Quib27. Clearly labelled sample articles let you try the reader.
 2. In **Settings**, optionally add your AI key and reading interests.
 3. Select YouTube, Raindrop or Freedium in the right-hand **Connections** panel.
    Add channel URLs or @handles for YouTube; Raindrop uses a personal token and
@@ -138,7 +138,9 @@ catch-up edition rather than a backlog of sends.
 
 ## Local data and provider access
 
-The library is `~/.local/share/daily-edition/library.sqlite3`, with private editions
+Existing library and credential locations keep their original `daily-edition` names
+so upgrading preserves your reading and keys. The default library is
+`~/.local/share/daily-edition/library.sqlite3`, with private editions
 and transcripts alongside it. The directory allows owner access only. Credentials
 use the operating system credential store when available, otherwise an owner-only
 local file; Settings reports the actual storage mode. Keys are never returned by

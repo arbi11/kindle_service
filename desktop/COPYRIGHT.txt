@@ -1,7 +1,7 @@
-Daily Edition
+Quib27
 Copyright (c) 2026 Arbaaz Khan. All rights reserved.
 
-Daily Edition is proprietary software, provided free of charge for use on your
+Quib27 is proprietary software, provided free of charge for use on your
 own computer. Its application source code is not offered under an open-source
 license. This notice does not grant permission to publish or relicense that
 source code.

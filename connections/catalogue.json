@@ -4,17 +4,17 @@
     {
       "id": "youtube",
       "manifest": "youtube/connection.json",
-      "sha256": "95a7b674189b12512fd700c9856e6cdaa93254736fe63a4c1be485da0fe318b3"
+      "sha256": "55a6d604a4e64c49d96620048d2b7725829eb17de3980e5f74ff9be349cb80bb"
     },
     {
       "id": "raindrop",
       "manifest": "raindrop/connection.json",
-      "sha256": "49e99441de541585f68ff8b0489d151deed1c65a728294594f70ae977cff6067"
+      "sha256": "6cec1ddfa26ebd0f9d3fb7d78f68725039631e75ddb79608ebe4fc5ca848858e"
     },
     {
       "id": "freedium",
       "manifest": "freedium/connection.json",
-      "sha256": "a558250f817921cfdddcdc3466390067cc70a4727352c9e657e78e7ee353fd78"
+      "sha256": "45fa797cbf8f33eb97b7a8a4778a61646455ed3d5cfbfe788a175aec2dbbffc2"
     }
   ]
 }

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 def notices(target):
     folder = target / "licenses"
     folder.mkdir(exist_ok=True)
-    lines = [f"Daily Edition {__version__} — third-party notices", "",
+    lines = [f"Quib27 {__version__} — third-party notices", "",
         "Qt/PySide6 libraries are dynamically linked and remain replaceable in _internal/.",
         "Their LGPL/GPL/commercial alternatives and notices are reproduced below; only",
         "the Qt modules required by the desktop shell are bundled.",
@@ -59,7 +59,7 @@ def main():
     work = ROOT / "build"
     environment = dict(os.environ)
     environment["PYINSTALLER_CONFIG_DIR"] = str(ROOT / "artifacts/pyinstaller-cache")
-    command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--name", "DailyEdition",
+    command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--name", "Quib27",
         "--distpath", str(dist), "--workpath", str(work / "pyinstaller"), "--specpath", str(work),
         "--add-data", str(ROOT / "desktop/ui") + ":desktop/ui",
         "--add-data", str(ROOT / "connections") + ":connections",
@@ -69,7 +69,7 @@ def main():
         "--exclude-module", "ebooklib", "--exclude-module", "tkinter",
         str(ROOT / "daily_edition.py")]
     subprocess.run(command, check=True, cwd=ROOT, env=environment)
-    target = dist / "DailyEdition"
+    target = dist / "Quib27"
     shutil.copy2(ROOT / "desktop/install.py", target / "install.py")
     shutil.copy2(ROOT / "desktop/ui/icon.svg", target / "icon.svg")
     shutil.copy2(ROOT / "desktop/COPYRIGHT.txt", target / "COPYRIGHT.txt")
@@ -78,9 +78,9 @@ def main():
     installer.write_text('#!/bin/sh\nset -eu\nEDITION_INSTALL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec python3 "$EDITION_INSTALL_DIR/install.py" --launch "$@"\n')
     installer.chmod(0o755)
     notices(target)
-    archive = dist / f"daily-edition-{__version__}-linux-{platform.machine()}.tar.gz"
+    archive = dist / f"quib27-{__version__}-linux-{platform.machine()}.tar.gz"
     with tarfile.open(archive, "w:gz", compresslevel=3) as output:
-        output.add(target, arcname="DailyEdition")
+        output.add(target, arcname="Quib27")
     with archive.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     (dist / (archive.name + ".sha256")).write_text(digest + "  " + archive.name + "\n")
