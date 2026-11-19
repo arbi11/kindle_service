@@ -1,5 +1,4 @@
 trafilatura==2.3.1
-ebooklib==0.20
 wordfreq==3.1.1
 pillow==12.3.0
 requests==2.34.2

@@ -817,38 +817,12 @@ def chapter_html(art: Article, include_images: bool) -> str:
 
 
 def build_epub(name: str, articles: list[Article], out_dir: Path, slot: datetime, include_images: bool) -> Path:
-    from ebooklib import epub
-
-    book = epub.EpubBook()
-    book.set_identifier(f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, APP + ':' + name + ':' + slot.isoformat())}")
-    book.set_title(name)
-    book.set_language("en")
-    book.add_author("Raindrop")
-    book.add_metadata("DC", "date", slot.date().isoformat())
-    css = epub.EpubItem(uid="style", file_name="style.css", media_type="text/css", content=CSS)
-    book.add_item(css)
-
-    chapters = []
-    for art in articles:
-        ch = epub.EpubHtml(title=art.title, file_name=f"a{art.index:02d}.xhtml", lang="en")
-        ch.content = chapter_html(art, include_images)
-        ch.add_item(css)
-        book.add_item(ch)
-        chapters.append(ch)
-        if include_images:
-            for img_name, data in art.images:
-                book.add_item(epub.EpubImage(uid=img_name.replace("/", "_").replace(".", "_"),
-                                             file_name=img_name, media_type="image/jpeg", content=data))
-
-    book.toc = chapters
-    book.add_item(epub.EpubNcx())
-    book.add_item(epub.EpubNav(title="Contents"))
-    book.spine = ["nav", *chapters]
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{name}.epub"
-    epub.write_epub(str(path), book, {})
-    return path
+    from epub_writer import write_epub
+    chapters = [(art.title, chapter_html(art, include_images)) for art in articles]
+    images = [image for art in articles for image in art.images] if include_images else []
+    return write_epub(out_dir / f"{name}.epub", name, chapters, author="Raindrop", css=CSS,
+                      identifier=f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, APP + ':' + name + ':' + slot.isoformat())}",
+                      images=images)
 
 
 # --------------------------------------------------------------------------

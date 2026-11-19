@@ -1,0 +1,268 @@
+'use strict';
+const $ = (s, root = document) => root.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icons = {
+  home:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-8h6v8"/>',
+  book:'<path d="M12 6c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Zm0 0v15"/>',
+  layers:'<path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+  settings:'<path d="m10 3-.5 3-2 1-2.7-1.1-2 3.4L5 11v2l-2.2 1.7 2 3.4L7.5 17l2 1 .5 3h4l.5-3 2-1 2.7 1.1 2-3.4L19 13v-2l2.2-1.7-2-3.4L16.5 7l-2-1-.5-3z"/><circle cx="12" cy="12" r="3"/>',
+  shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8.5 11.5 2.5 2.5 4.5-5"/>',
+  arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
+  back:'<path d="M19 12H5m5-5-5 5 5 5"/>',
+  external:'<path d="M14 3h7v7m0-7-11 11M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 13 2l1 4M4 12l1 4a8 8 0 0 0 13 2"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  bookmark:'<path d="M6 3h12v18l-6-4-6 4z"/>',
+  check:'<path d="m5 12 4 4L19 6"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',
+  video:'<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/>',
+  article:'<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/>',
+  cloud:'<path d="M6 18a5 5 0 0 1-1-10 7 7 0 0 1 13-1 5.5 5.5 0 0 1 0 11z"/>',
+  kindle:'<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 9h8M8 12h5M11 18h2"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  download:'<path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/>',
+  trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
+  leaf:'<path d="M20 3c-1 10-2 17-10 17a7 7 0 0 1-7-7C3 5 11 5 20 3ZM5 18 15 9"/>',
+  lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',
+  moon:'<path d="M20 14A9 9 0 0 1 10 3a9 9 0 1 0 10 11Z"/>',
+  type:'<path d="m3 19 6-14 6 14M5 14h8M17 11h6m-3 0v8"/>',
+  folder:'<path d="M3 6V4h7l2 3h9v13H3z"/>',
+};
+const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
+let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
+let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme = localStorage.getItem('readerTheme') || 'light';
+let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
+let refreshEpoch = 0;
+let activeJob = null, knownJobIds = new Set(), sourceKind = 'youtube', searchTimer;
+const dialog = $('#modal');
+
+async function api(path, method='GET', body) {
+  const response = await fetch('/api' + path, {method, credentials:'same-origin', headers:{'Content-Type':'application/json','X-Daily-Edition':'1'}, ...(body !== undefined ? {body:JSON.stringify(body)} : {})});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'This action could not finish. Please try again.');
+  return result;
+}
+function toast(message, error=false, editionId=null) {
+  const el = document.createElement('div'); el.className = 'toast' + (error ? ' error':'');
+  el.innerHTML = `${icon(error?'info':'check')}<div><p>${esc(message)}</p>${editionId?`<button class="toast-action" data-action="edition" data-id="${esc(editionId)}">Open edition ${icon('arrow')}</button>`:''}</div><button aria-label="Dismiss">${icon('close')}</button>`;
+  el.lastElementChild.onclick = () => el.remove(); $('#toasts').append(el);
+  while($('#toasts').children.length>3) $('#toasts').firstElementChild.remove();
+  setTimeout(() => el.remove(), error?15000:8500);
+}
+const minutes = words => Math.max(1, Math.round((words || 0)/220));
+const shortDate = value => value ? new Date(value).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Not checked yet';
+const timeOf = value => value ? new Date(value).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',timeZone:state?.settings.timezone}) : '';
+const excerpt = item => item.takeaway || (new DOMParser()).parseFromString(item.summary_html || item.body_html,'text/html').body.textContent.slice(0,210);
+const sample = item => item.is_sample ? '<span class="sample-tag">SAMPLE</span>' : '';
+const latestEdition = () => state.editions.find(e => !e.is_sample) || state.editions[0];
+
+async function refresh(renderPage=true) {
+  const epoch=++refreshEpoch;
+  const [data, library] = await Promise.all([api('/bootstrap'), api('/items?' + new URLSearchParams(filters))]);
+  if(epoch!==refreshEpoch) return;
+  state = data; items = library.items;
+  if (renderPage) render();
+}
+function navigation(next) {
+  view = next; currentItem = null; currentEdition = null;
+  if (next !== 'library') filters = {kind:'all',status:'all',q:''};
+  window.scrollTo(0,0); refresh().catch(e => toast(e.message,true));
+}
+function render() {
+  if (!state) return;
+  if (currentItem) { renderReader(); return; }
+  const nav = [['today','home','Today'],['library','book','Library'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
+  $('#app').innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">d<span>e</span></div><div><div class="brand-name">Daily Edition</div><div class="brand-caption">A little more reading</div></div></div><div class="nav-label">Your reading room</div><nav class="nav" aria-label="Main navigation">${nav.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span>${id==='library'&&state.stats.unread?`<b class="badge">${state.stats.unread}</b>`:''}</button>`).join('')}</nav><div class="sidebar-foot"><div class="privacy-icon">${icon('shield')}</div><strong>Your reading. Your device.</strong><p>No account. No shared library.<br>Just a little space for yourself.</p><div class="version"><span>Daily Edition</span><span>v${esc(state.version)}</span></div></div></aside><main class="main"><header class="topbar"><span class="eyebrow">Your personal reading room</span><div class="top-actions"><span class="local-pill"><i class="dot"></i> On this device</span><button class="icon-btn" data-nav="settings" aria-label="Open settings">${icon('settings')}</button></div></header><div id="page">${currentEdition?editionPage():({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)()}</div></main></div>`;
+}
+function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
+function empty(title, text, button='', i='book') { return `<div class="empty"><div class="empty-icon">${icon(i)}</div><h2>${title}</h2><p>${text}</p>${button}</div>`; }
+function sourceIcon(kind) { return `<span class="source-icon ${kind}">${icon(kind==='video'?'video':'article')}</span>`; }
+function itemRow(item,index=0) {
+  return `<article class="article-row ${item.is_read?'is-read':''}" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-no">${String(index+1).padStart(2,'0')}</div><div class="article-copy"><div class="article-meta">${sourceIcon(item.kind)}<span>${esc(item.author || (item.kind==='video'?'Video':'Article'))}</span><span>·</span><span>${minutes(item.words)} min read</span>${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div></div><div class="row-end">${!item.is_read?'<i class="read-dot" title="Unread"></i>':''}<button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`;
+}
+function tabs() { return `<div class="tabs" aria-label="Filter reading">${[['all','Everything'],['article','Articles'],['video','Videos']].map(([id,text]) => `<button data-filter="kind" data-value="${id}" class="${filters.kind===id?'active':''}" aria-pressed="${filters.kind===id}">${text}</button>`).join('')}<button data-filter="status" data-value="${filters.status==='saved'?'all':'saved'}" class="${filters.status==='saved'?'active':''}" aria-pressed="${filters.status==='saved'}">${icon('bookmark')} Saved</button></div>`; }
+function todayPage() {
+  const edition = latestEdition(), s = state.settings;
+  const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:s.timezone});
+  return `<section class="hero"><div><div class="date">${icon('sun')} ${esc(date)}</div><h1>Good things,<br><em>gathered for you.</em></h1><p>A quieter way to keep up with the things you care about.</p></div><div class="hero-action"><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button><div class="hint">${icon('clock')} ${state.next_run?'Next edition at '+timeOf(state.next_run):'A little reading, whenever you’re ready'}</div></div></section>${!s.onboarding_done?`<div class="setup-card"><div class="setup-icon">${icon('leaf')}</div><div class="setup-text">A reading routine that feels like yours.<p>Add a few sources and bring your own AI key to begin.</p></div><button class="btn secondary" data-action="setup">Make it yours ${icon('arrow')}</button>${state.legacy_available?'<button class="text-btn" data-action="import">Import existing setup</button>':''}</div>`:''}<div class="dashboard"><div>${edition?`<section class="edition-feature"><div><div class="eyebrow">${icon('book')} ${edition.is_sample?'YOUR FIRST LOOK · SAMPLE EDITION':'YOUR LATEST EDITION'}</div><h2>${esc(edition.title)}</h2><p>${edition.item_count} pieces to settle into. About ${minutes(edition.words)} minutes of good reading.</p></div><div class="feature-bottom"><button class="btn light" data-action="edition" data-id="${edition.id}">Open edition ${icon('arrow')}</button><span>${edition.is_sample?'Get a feel for the reader':shortDate(edition.created_at)+' · Prepared on your device'}</span></div></section>`:empty('Your first edition starts here','Follow a few sources, then prepare an edition.','<button class="btn" data-nav="sources">Choose sources</button>')}<div class="section-heading"><h2>On your reading list<span class="count">${items.length} pieces</span></h2><button class="text-btn" data-nav="library">View library ${icon('arrow')}</button></div>${tabs()}<div class="article-list">${items.slice(0,6).map(itemRow).join('') || '<div class="inline-empty">A fresh reading list is on its way. Add sources to get started.</div>'}</div></div><aside class="rail"><div class="rail-card"><div class="small-label">A little daily ritual</div><h3 style="margin-top:10px">Make time for a good read.</h3><div class="label">YOUR DAILY READING BUDGET</div><div class="value">${s.reading_minutes} <span style="font-size:13px">minutes</span></div><div class="line"></div><div class="routine-row"><span>Following</span><strong>${state.sources.filter(x=>x.enabled).length} sources</strong></div><div class="routine-row"><span>Ready to read</span><strong>${state.stats.unread} pieces</strong></div><div class="routine-row"><span>Delivery</span><strong>${s.schedule_enabled?'Scheduled':'On your time'}</strong></div><div class="line"></div><button class="text-btn" data-nav="delivery">Set your routine ${icon('arrow')}</button></div><div class="quote-card"><div class="quote-mark">“</div><blockquote>Attention is the beginning of a good read.</blockquote><div class="caption">A small reminder to slow down</div></div></aside></div><p class="footer-note">Gathered on your device. Read at your pace.</p>`;
+}
+function libraryPage() {
+  return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
+}
+function sourcesPage() {
+  const connected = state.secrets.configured.raindrop_token;
+  return heading('Follow what matters.','Your favourite voices and saved articles, without the endless feed.',`<button class="btn" data-action="add-source">${icon('plus')} Add source</button>`) + `<div class="connection-banner"><div class="source-logo raindrop">${icon('cloud')}</div><div class="info"><h3>Bring your saved reading along.</h3><p>${connected?'Raindrop is connected. Choose the collections you want to follow.':'Connect Raindrop to turn your saved articles into a reading edition.'}</p></div><span class="status-chip ${connected?'':'gray'}">${icon(connected?'check':'lock')}${connected?'Connected':'Not connected'}</span><button class="btn secondary small" data-action="connect-raindrop">${connected?'Manage':'Connect Raindrop'}</button></div>${state.sources.length?`<div class="sources-grid">${state.sources.map(source=>`<article class="source-card ${source.enabled?'':'paused'}"><div class="source-top"><div class="source-logo ${source.kind}">${icon(source.kind==='youtube'?'video':source.kind==='raindrop'?'cloud':'article')}</div><button class="toggle ${source.enabled?'on':''}" role="switch" aria-checked="${Boolean(source.enabled)}" aria-label="${source.enabled?'Pause':'Resume'} ${esc(source.title)}" data-action="toggle-source" data-id="${source.id}"></button></div><h3>${esc(source.title)}</h3><div class="source-address">${source.kind==='raindrop'?(source.detail.collection_id===0?'All saved articles':'Collection '+source.detail.collection_id)+(source.detail.tags?.length?' · '+esc(source.detail.tags.join(', ')):''):esc(source.detail.handle || source.url)}</div>${source.error?`<div class="error">${esc(source.error)}</div>`:''}<div class="source-bottom"><span>${source.item_count} pieces collected · ${source.checked_at?'Checked '+shortDate(source.checked_at):'Ready for its first edition'}</span><button class="icon-btn" data-action="remove-source" data-id="${source.id}" aria-label="Remove ${esc(source.title)}">${icon('trash')}</button></div></article>`).join('')}</div>`:empty('A few good sources go a long way.','Start with a YouTube channel, a Raindrop collection, or a single article.','<button class="btn" data-action="add-source">'+icon('plus')+' Add your first source</button>','layers')}<div class="section-note">${icon('info')}<div>Your computer checks these sources when you prepare an edition. Videos use available captions; optional audio transcription can be enabled in Settings.</div></div>`;
+}
+function field(name,label,value,type='text',hint='',extra='') { return `<div class="field ${extra}"><label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${esc(value)}" ${type==='email'&&name.endsWith('_to')?'multiple':''} ${type==='number'?'inputmode="numeric"':''}>${hint?`<span class="hint">${hint}</span>`:''}</div>`; }
+function check(name,label,description,checked) { return `<label class="checkbox-row"><input type="checkbox" name="${name}" ${checked?'checked':''}><span>${label}${description?`<small>${description}</small>`:''}</span></label>`; }
+function credential(name,label,placeholder,hint='') { const saved = state.secrets.configured[name];return `<div class="field full"><label for="f-${name}">${label}</label><input autocomplete="new-password" id="f-${name}" name="${name}" type="password" placeholder="${saved?'Saved · leave blank to keep it':esc(placeholder)}"><span class="hint">${hint}</span>${saved?`<span class="key-state">${icon('lock')} Stored in your ${esc(state.secrets.storage)} <button class="text-btn" type="button" data-action="clear-secret" data-name="${name}">Remove</button></span>`:''}</div>`; }
+function settingsRail() { return `<aside class="settings-rail"><h3 class="rail-heading">A library that belongs to you.</h3><p>Sources, articles and reading history stay on this device. There’s no Daily Edition account to create.</p><ul class="privacy-list"><li>${icon('check')} Your own API key</li><li>${icon('check')} Direct provider connections</li><li>${icon('check')} No analytics or tracking</li><li>${icon('check')} Read offline once prepared</li></ul><p class="footnote">When you enable summaries, source text is sent directly to your chosen AI provider. Email delivery uses your chosen mail provider.<br><br>Credentials use your ${esc(state.secrets.storage)}.</p></aside>`; }
+function settingsPage() {
+  const s = state.settings;
+  return heading('Made for your reading.','A few preferences to make each edition feel more like yours.')+`<div class="settings-layout"><form id="settings-form"><section class="form-card"><h2>Your AI, your choice.</h2><p class="description">Bring your own key. Usage is billed by your provider; Daily Edition is free.</p><div class="form-grid"><div class="field"><label for="f-provider">Provider</label><select id="f-provider" name="provider"><option value="openai" ${s.provider==='openai'?'selected':''}>OpenAI</option><option value="openrouter" ${s.provider==='openrouter'?'selected':''}>OpenRouter</option></select></div>${field('model','Model ID',s.model,'text','Use a model available in your provider account.')}${credential(s.provider+'_key','API key','Paste your '+(s.provider==='openai'?'OpenAI':'OpenRouter')+' key','Your key stays on this computer and is never returned to the interface.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-ai">${icon('check')} Check model</button><span class="hint">Makes one small API request.</span></div></section><section class="form-card"><h2>Tell us what catches your attention.</h2><p class="description">Summaries give more room to the details you care about.</p><div class="form-grid"><div class="field full"><label for="f-interests">Your interests</label><textarea name="interests" id="f-interests" placeholder="For example: engineering, thoughtful investing, science, and the stories behind new ideas.">${esc(s.interests)}</textarea></div>${field('summary_words','Words per summary',s.summary_words,'number','150–2,000 words. Around 220 words is one minute of reading.')}${field('reading_minutes','Daily reading budget',s.reading_minutes,'number','Minutes of reading per edition.')}<div class="field full">${check('summarize_articles','Include AI summaries of saved articles','The full article stays available in the reader. Without a key, articles are saved in full.',s.summarize_articles)}</div></div></section><section class="form-card"><h2>A manageable edition.</h2><p class="description">Keep processing time and API usage predictable.</p><div class="form-grid">${field('max_items_per_run','Maximum new pieces per run',s.max_items_per_run,'number','1–20 pieces. Additional items wait for a later run.')}${field('lookback_days','Look back this many days',s.lookback_days,'number','1–30 days of recent uploads and bookmarks.')}<div class="field full">${check('audio_fallback','Allow cloud transcription when captions are unavailable','May download video audio and add transcription charges. Caption access can vary by video.',s.audio_fallback)}</div>${field('audio_minutes_per_video','Audio budget per run',s.audio_minutes_per_video,'number','Maximum cloud transcription minutes, also capped per video. Shared across the run.')}</div><div class="setting-info">API requests use the provider you selected. Failed summaries are reported in Sources; the app does not switch to another paid provider.</div></section><div class="form-actions"><button class="btn" type="submit">Save preferences ${icon('check')}</button><span class="hint">Applies to the next edition.</span></div><section class="form-card" style="margin-top:30px"><h2>Bring your reading with you.</h2><p class="description">Import an EPUB or your existing laptop service settings and recent editions.</p><div class="inline-actions"><button class="btn secondary small" type="button" data-action="upload">${icon('download')} Import EPUB</button>${state.legacy_available?'<button class="btn secondary small" type="button" data-action="import">Import existing service</button>':''}</div><div class="setting-info">Importing the existing service copies its settings and sources. Automatic sending stays paused in this app so your existing service can continue without duplicate delivery.</div><p class="mini muted" style="margin-top:17px;overflow-wrap:anywhere">Your local library: ${esc(state.data_directory)}</p></section></form>${settingsRail()}</div>`;
+}
+function deliveryPage() {
+  const s=state.settings;
+  return heading('A good read, delivered.','Set a routine. Let your laptop prepare the edition, and meet it wherever you read.')+`<div class="settings-layout"><form id="delivery-form"><section class="form-card"><h2>Where do you like to read?</h2><p class="description">Every edition is available here. Choose additional ways to receive it.</p><div class="form-grid"><div class="field full">${check('email_enabled','A personal newsletter','The entire edition, beautifully formatted in the email body.',s.email_enabled)}</div>${field('email_to','Newsletter email address',s.email_to,'email','Separate multiple addresses with commas.','full')}<div class="field full" style="margin-top:8px">${check('kindle_enabled','Send to Kindle','A distraction-free EPUB attachment for your Kindle library.',s.kindle_enabled)}</div>${field('kindle_to','Send-to-Kindle address',s.kindle_to,'text','Add your sender to Amazon’s Approved Personal Document E-mail List.','full')}</div></section><section class="form-card"><h2>Sent through your own email.</h2><p class="description">Use your mail provider’s SMTP details. For Gmail, use an App Password.</p><div class="form-grid">${field('smtp_host','SMTP server',s.smtp_host)}${field('smtp_port','Port',s.smtp_port,'number','465 for secure SMTP, or 587 with STARTTLS.')}${field('smtp_username','Email / username',s.smtp_username,'email')}${field('smtp_sender','Sender email',s.smtp_sender,'email','Leave blank to use your username.')}${credential('smtp_password','App password','Your mail provider’s app password','Encrypted transport is required for all delivery connections.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-smtp">${icon('check')} Check connection</button><span class="hint">Signs in without sending a message.</span></div></section><section class="form-card"><h2>A rhythm that fits your day.</h2><p class="description">The app prepares one edition after a missed slot when the laptop wakes up.</p><div class="form-grid">${field('timezone','Timezone',s.timezone,'text','For example: Asia/Kolkata or America/New_York.')}${field('delivery_times','Preparation times',s.delivery_times.join(', '),'text','24-hour times, separated by commas. Up to four.')}<div class="field full">${check('schedule_enabled','Prepare editions automatically','Keep Daily Edition running in the background, with your laptop awake and connected.',s.schedule_enabled)}</div><div class="field full">${check('auto_send','Send each scheduled edition automatically','Use the email and Kindle destinations enabled above.',s.auto_send)}</div><div class="field full">${check('autostart','Launch at login','Starts in the system tray so your reading routine can continue.',state.autostart)}</div></div><div class="setting-info">Closing the window keeps the app in the tray when a schedule is enabled. Choose Quit in the tray menu to stop it.</div></section><div class="form-actions"><button class="btn" type="submit">Save delivery settings ${icon('check')}</button><button class="btn secondary" type="button" data-action="send-latest">${icon('mail')} Preview & send latest</button></div></form><aside class="settings-rail"><h3 class="rail-heading">Read wherever feels right.</h3><p>Receive an edition in your inbox, or let your Kindle hold the reading for later. You can always open it here, too.</p><ul class="privacy-list"><li>${icon('check')} Full newsletter in the email</li><li>${icon('check')} EPUB attachment for Kindle</li><li>${icon('check')} Delivery history on this device</li><li>${icon('check')} No repeated successful sends</li></ul><p class="footnote">Your mail server confirms acceptance. Kindle processing and inbox delivery happen after that, through your email provider and Amazon.</p></aside></div><section class="form-card" style="margin-top:28px"><h2>Delivery history</h2><p class="description">A record of what your mail server accepted.</p>${state.deliveries.length?`<table class="delivery-history"><thead><tr><th>Edition</th><th>Destination</th><th>Status</th><th>When</th></tr></thead><tbody>${state.deliveries.map(d=>`<tr><td>${esc(d.edition_title || 'Edition')}</td><td class="target">${icon(d.channel==='kindle'?'kindle':'mail')} ${esc(d.target)}</td><td><span class="status-chip ${d.status==='sent'?'':'warn'}">${esc(d.status==='sent'?'Accepted by mail server':d.status)}</span>${d.message&&d.status!=='sent'?`<p class="history-error">${esc(d.message)}</p>`:''}${d.status==='uncertain'?`<div class="inline-actions" style="margin-top:9px"><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="sent">Received it</button><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="retry">Allow retry</button></div>`:''}</td><td>${shortDate(d.created_at)}<br>${timeOf(d.created_at)}</td></tr>`).join('')}</tbody></table>`:'<p class="intro-line">Your first delivery will appear here. Prepare an edition, then use Preview & send.</p>'}</section>`;
+}
+function editionPage() {
+  const e=currentEdition, words=e.items.reduce((sum,i)=>sum+i.words,0);
+  return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to ${view==='library'?'library':'today'}</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
+}
+async function openReader(id) {
+  currentItem = await api('/items/'+id); readerTab = currentItem.summary_html?'summary':'original'; lastView=view; renderReader(); window.scrollTo(0,0);
+}
+function renderReader() {
+  const item=currentItem, next=items[items.findIndex(i=>i.id===item.id)+1];
+  $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand">Daily Edition</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
+}
+function modal(content, eyebrow='YOUR DAILY EDITION') {
+  dialog.innerHTML=`<div class="modal-head"><span class="eyebrow">${eyebrow}</span><button class="icon-btn" data-action="close-modal" aria-label="Close">${icon('close')}</button></div><div class="modal-body">${content}</div>`;
+  if (!dialog.open) dialog.showModal();
+}
+function showSourceModal(kind='youtube') {
+  sourceKind=kind;
+  const types=[['youtube','video','YouTube'],['raindrop','cloud','Raindrop'],['article','article','Article']];
+  const s = state.secrets.configured;
+  modal(`<h2 id="modal-title">A few good sources.</h2><p class="description">Choose what you want to keep up with. You can pause or remove a source at any time.</p><div class="source-tabs">${types.map(([id,i,label])=>`<button data-action="source-tab" data-value="${id}" class="${id===kind?'active':''}">${icon(i)}${label}</button>`).join('')}</div><form id="source-form">${kind==='youtube'?'<div class="field"><label for="source-url">Channel URL or @handle</label><input id="source-url" name="url" placeholder="@YourFavouriteChannel" required><span class="hint">Follow a channel’s recent uploads. Captions are used when available.</span></div>':kind==='article'?'<div class="field"><label for="source-url">Article URL</label><input id="source-url" name="url" type="url" placeholder="https://example.com/a-good-read" required><span class="hint">Publicly accessible articles work best. Sign-in and paywalls may prevent extraction.</span></div>':`${credential('raindrop_token','Raindrop token','Paste your personal test token',`Create a token in <a href="https://app.raindrop.io/settings/integrations" target="_blank" rel="noopener noreferrer">Raindrop’s integrations settings ↗</a>. It stays on this device.`)}<div class="field"><label for="source-collection">Collection</label><select name="collection_id" id="source-collection"><option value="0">All saved articles</option><option value="-1">Unsorted</option></select><span class="hint">${s.raindrop_token?'Use Check connection to load your collections.':'Save a token to connect your account.'}</span></div>${field('collection_name','Display name','Saved articles')}${field('tags','Filter by tags (optional)','','text','Comma-separated tags. A bookmark can match any one.')}<button class="btn secondary small" type="button" data-action="test-raindrop">${icon('check')} Check connection & load collections</button>`}<div id="modal-feedback"></div><button class="btn full" type="submit">${icon('plus')} ${kind==='youtube'?'Follow channel':kind==='raindrop'?'Follow collection':'Add article'}</button></form>`,'FOLLOW WHAT MATTERS');
+}
+function setupModal() {
+  modal(`<h2 id="modal-title">Make room for your kind of reading.</h2><p class="description">Start with your AI key and a few interests. Then choose your sources. You can read saved articles without an AI key, too.</p><form id="setup-form"><div class="field"><label for="setup-provider">AI provider</label><select id="setup-provider" name="provider"><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></div><div class="field"><label for="setup-key">API key (optional for articles)</label><input id="setup-key" name="api_key" type="password" autocomplete="new-password" placeholder="Your own provider key"><span class="hint">AI usage is billed directly by your provider.</span></div><div class="field"><label for="setup-interests">What do you enjoy reading about?</label><textarea id="setup-interests" name="interests" placeholder="A few topics, in your own words…">${esc(state.settings.interests)}</textarea></div><div id="modal-feedback"></div><button class="btn full" type="submit">Choose your sources ${icon('arrow')}</button></form>${state.legacy_available?'<div style="text-align:center;margin-top:20px"><button class="text-btn" data-action="import">Or import your existing laptop setup</button></div>':''}`,'A LITTLE MORE YOU');
+}
+async function sendModal(id) {
+  const edition=await api('/editions/'+id), targets=[];
+  for(const channel of ['email','kindle']) if(state.settings[channel+'_enabled']) for(const address of state.settings[channel+'_to'].split(/[,;\n]/).map(x=>x.trim()).filter(Boolean)) targets.push([channel,address]);
+  if (!targets.length) { toast('Add an email or Kindle destination in Delivery first.'); navigation('delivery'); return; }
+  modal(`<h2 id="modal-title">Ready to send?</h2><p class="description">${esc(edition.title)}<br>${edition.items.length} pieces · About ${minutes(edition.items.reduce((a,i)=>a+i.words,0))} minutes to read.</p>${edition.is_sample?'<div class="modal-success">This is a sample edition. You can send it to try the delivery experience.</div>':''}<div class="small-label" style="margin-bottom:12px">Your destinations</div>${targets.map(([channel,address])=>`<div class="recipient">${icon(channel==='kindle'?'kindle':'mail')} ${esc(address)} <span class="mini muted">${channel==='kindle'?'EPUB':'Newsletter'}</span></div>`).join('')}<p class="description" style="margin-top:18px;margin-bottom:15px">Previously successful sends to these addresses will be skipped. Your mail server confirms acceptance; inbox and Kindle processing happen afterwards.</p><div class="inline-actions"><a class="text-btn" href="/api/editions/${id}/html">Download email preview ${icon('external')}</a><a class="text-btn" href="/api/editions/${id}/epub">Download EPUB ${icon('download')}</a></div><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep reading</button><button class="btn" data-action="confirm-send" data-id="${id}">${icon('mail')} Send edition</button></div>`,'YOUR PERSONAL NEWSLETTER');
+}
+async function startTask(kind,payload={}) {
+  const result=await api('/jobs','POST',{kind,payload}); activeJob=result.job_id;
+  await refresh(false); updateTask(); return result;
+}
+function updateTask() {
+  const job=state.jobs.find(j=>['queued','running'].includes(j.status));
+  $('#task').innerHTML=job?`<div class="task-card"><p><span class="spinner"></span>${esc(job.message)}</p><div class="task-track"><span style="width:${Math.max(4,job.progress)}%"></span></div></div>`:'';
+  document.querySelectorAll('[data-action="prepare"]').forEach(b=>b.disabled=Boolean(job));
+}
+async function poll() {
+  try {
+    const next=await api('/bootstrap');
+    const finished=next.jobs.filter(j=>['done','failed','interrupted'].includes(j.status)&&!knownJobIds.has(j.id));
+    for(const job of next.jobs) if(['done','failed','interrupted'].includes(job.status)) knownJobIds.add(job.id);
+    state=next; updateTask();
+    for(const job of finished) {
+      const result=JSON.parse(job.result||'{}');
+      toast(job.message,job.status!=='done',result.edition_id);
+      if(job.kind==='test_raindrop'&&job.status==='done'&&$('#source-collection')) {
+        const select=$('#source-collection');
+        select.innerHTML='<option value="0">All saved articles</option><option value="-1">Unsorted</option>'+(result.collections||[]).map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('');
+      }
+    }
+    if(finished.some(j=>['prepare','add_youtube','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open&&!['settings','delivery'].includes(view)) await refresh();
+  } catch(e) { /* An app shutdown or a brief local interruption should not erase the reader. */ }
+}
+function readForm(form) { const values={}; for(const element of form.elements) if(element.name) values[element.name]=element.type==='checkbox'?element.checked:element.type==='number'?Number(element.value):element.value; return values; }
+async function saveSettingsForm(form,quiet=false) {
+  const values=readForm(form), credentials={};
+  for(const name of ['openai_key','openrouter_key','smtp_password','raindrop_token']) if(name in values) {if(values[name]) credentials[name]=values[name];delete values[name];}
+  const autostart=values.autostart; delete values.autostart;
+  if(typeof values.delivery_times==='string') values.delivery_times=values.delivery_times.split(',').map(t=>t.trim()).filter(Boolean);
+  const result=await api('/settings','POST',{settings:values,credentials});
+  if(autostart!==undefined&&autostart!==state.autostart) await api('/autostart','POST',{enabled:autostart});
+  state.settings=result.settings;state.secrets=result.secrets;
+  if(!quiet) {toast('Your preferences are saved.');await refresh();}
+}
+document.addEventListener('submit',async event=>{
+  const form=event.target;if(!['source-form','settings-form','delivery-form','setup-form'].includes(form.id)) return;
+  event.preventDefault();const button=$('[type="submit"]',form);if(button) button.disabled=true;
+  try {
+    if(['settings-form','delivery-form'].includes(form.id)) await saveSettingsForm(form);
+    else if(form.id==='setup-form') {
+      const values=readForm(form), credentials={};if(values.api_key) credentials[values.provider+'_key']=values.api_key;
+      await api('/settings','POST',{settings:{provider:values.provider,model:values.provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,onboarding_done:true},credentials});
+      dialog.close();await refresh(false);navigation('sources');showSourceModal();
+    } else {
+      const values=readForm(form);
+      if(sourceKind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
+      const body=sourceKind==='raindrop'?{kind:sourceKind,collection_id:Number(values.collection_id),title:values.collection_name||$('#source-collection option:checked')?.textContent||'Saved articles',tags:values.tags.split(',').map(t=>t.trim()).filter(Boolean)}:{kind:sourceKind,url:values.url};
+      const result=await api('/sources','POST',body);dialog.close();
+      if(result.job_id) activeJob=result.job_id;else toast(result.message);
+      await refresh();updateTask();
+    }
+  } catch(e) {
+    const feedback=$('#modal-feedback');if(dialog.open&&feedback) feedback.innerHTML=`<div class="modal-error">${esc(e.message)}</div>`;else toast(e.message,true);
+  } finally {if(button?.isConnected) button.disabled=false;}
+});
+document.addEventListener('click',async event=>{
+  const target=event.target.closest('[data-action],[data-nav],[data-filter]');if(!target) return;
+  event.stopPropagation();
+  try {
+    if(target.dataset.nav) {navigation(target.dataset.nav);return;}
+    if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
+    const a=target.dataset.action,id=target.dataset.id;
+    if(a==='close-modal') dialog.close();
+    else if(a==='prepare') {if(!state.sources.some(s=>s.enabled)) {navigation('sources');showSourceModal();}else await startTask('prepare');}
+    else if(a==='add-source') showSourceModal();
+    else if(a==='connect-raindrop') showSourceModal('raindrop');
+    else if(a==='source-tab') showSourceModal(target.dataset.value);
+    else if(a==='setup') setupModal();
+    else if(a==='import') {modal(`<h2 id="modal-title">Bring your existing setup along.</h2><p class="description">Copy your laptop service’s sources, AI and email settings, delivery history identifiers, and up to eight recent editions into Daily Edition.</p><div class="setting-info">Your existing service keeps running. Automatic preparation and sending start paused in this app. Enable them in Delivery when you are ready to switch.</div><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep exploring</button><button class="btn" data-action="confirm-import">Import setup ${icon('arrow')}</button></div>`);}
+    else if(a==='confirm-import') {dialog.close();await startTask('import_legacy');}
+    else if(a==='upload') $('#epub-file').click();
+    else if(a==='read') await openReader(id);
+    else if(a==='edition') {currentEdition=await api('/editions/'+id);currentItem=null;render();window.scrollTo(0,0);}
+    else if(a==='back-edition') {currentEdition=null;render();}
+    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,0);}
+    else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
+    else if(a==='reader-theme') {readerTheme={light:'sepia',sepia:'dark',dark:'light'}[readerTheme]||'light';localStorage.setItem('readerTheme',readerTheme);await api('/settings','POST',{settings:{reader_theme:readerTheme}});const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}
+    else if(a==='font-smaller'||a==='font-larger') {readerSize=Math.min(28,Math.max(16,readerSize+(a==='font-larger'?1:-1)));localStorage.setItem('readerSize',readerSize);await api('/settings','POST',{settings:{reader_size:readerSize}});$('.reader-shell').style.setProperty('--reader-size',readerSize+'px');}
+    else if(a==='star') {const item=currentItem?.id===id?currentItem:items.find(i=>i.id===id)||currentEdition?.items.find(i=>i.id===id);if(item){const value=!item.starred;await api('/items/'+id,'PATCH',{starred:value});item.starred=value?1:0;if(currentItem) {const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}else await refresh();}}
+    else if(a==='mark-read') {await api('/items/'+id,'PATCH',{is_read:true});currentItem.is_read=1;target.innerHTML=icon('check')+' Read';target.classList.add('secondary');toast('Marked as read.');}
+    else if(a==='toggle-source') {const source=state.sources.find(s=>s.id===id);await api('/sources/'+id,'PATCH',{enabled:!source.enabled});await refresh();}
+    else if(a==='remove-source') {const source=state.sources.find(s=>s.id===id);modal(`<h2 id="modal-title">Stop following this source?</h2><p class="description">${esc(source.title)}<br>Reading already in your library stays available.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep following</button><button class="btn danger" data-action="confirm-remove-source" data-id="${id}">Remove source</button></div>`);}
+    else if(a==='confirm-remove-source') {await api('/sources/'+id,'DELETE',{});dialog.close();await refresh();toast('Source removed. Your saved reading stays in the library.');}
+    else if(a==='send') await sendModal(id);
+    else if(a==='send-latest') {await saveSettingsForm($('#delivery-form'),true);const edition=latestEdition();if(edition) await sendModal(edition.id);else toast('Prepare an edition first.');}
+    else if(a==='resolve-delivery') {await api('/deliveries/'+id+'/resolve','POST',{resolution:target.dataset.value});await refresh();toast(target.dataset.value==='sent'?'Receipt confirmed.':'Retry allowed. Check your mailbox before sending this edition again.');}
+    else if(a==='confirm-send') {dialog.close();await startTask('send',{edition_id:id});}
+    else if(a==='test-ai') {await saveSettingsForm($('#settings-form'),true);await startTask('test_ai');}
+    else if(a==='test-smtp') {await saveSettingsForm($('#delivery-form'),true);await startTask('test_smtp');}
+    else if(a==='test-raindrop') {const input=$('input[name="raindrop_token"]',dialog);if(input?.value) await api('/settings','POST',{credentials:{raindrop_token:input.value}});await startTask('test_raindrop');}
+    else if(a==='clear-secret') {modal(`<h2 id="modal-title">Remove this saved credential?</h2><p class="description">Requests that need this credential will pause until you add it again.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep it</button><button class="btn danger" data-action="confirm-clear-secret" data-name="${esc(target.dataset.name)}">Remove credential</button></div>`);}
+    else if(a==='confirm-clear-secret') {await api('/settings','POST',{credentials:{[target.dataset.name]:''}});dialog.close();await refresh();toast('Saved credential removed.');}
+  } catch(e) {toast(e.message,true);}
+});
+document.addEventListener('input',event=>{
+  if(event.target.id==='search') {
+    clearTimeout(searchTimer);const position=event.target.selectionStart;
+    searchTimer=setTimeout(async()=>{filters.q=event.target.value;await refresh();const input=$('#search');input?.focus();input?.setSelectionRange(position,position);},250);
+  }
+});
+document.addEventListener('change',async event=>{
+  if(event.target.id==='f-provider') {
+    const values=readForm($('#settings-form')),provider=event.target.value;
+    state.settings={...state.settings,provider,model:provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,summary_words:values.summary_words,reading_minutes:values.reading_minutes,max_items_per_run:values.max_items_per_run,lookback_days:values.lookback_days,summarize_articles:values.summarize_articles,audio_fallback:values.audio_fallback,audio_minutes_per_video:values.audio_minutes_per_video};render();
+  }
+  if(event.target.id==='source-collection') {const input=$('input[name="collection_name"]',dialog);if(input) input.value=event.target.selectedOptions[0].textContent;}
+  if(event.target.id==='epub-file'&&event.target.files[0]) {
+    const file=event.target.files[0];event.target.value='';
+    if(file.size>25*1024*1024) {toast('Choose an EPUB smaller than 25 MB.',true);return;}
+    try {const buffer=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<buffer.length;i+=8192) binary+=String.fromCharCode(...buffer.subarray(i,i+8192));const result=await api('/import-epub','POST',{content:btoa(binary)});activeJob=result.job_id;await refresh(false);updateTask();} catch(e) {toast(e.message,true);}
+  }
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&event.target.matches('[role="button"][data-action]')) event.target.click();
+  if(event.key==='Escape'&&currentItem&&!dialog.open) $('[data-action="reader-back"]')?.click();
+  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();navigation('library');setTimeout(()=>$('#search')?.focus(),150);}
+});
+dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)dialog.close();}});
+window.addEventListener('scroll',()=>{if(currentItem){const max=document.documentElement.scrollHeight-window.innerHeight;const bar=$('#reading-progress');if(bar)bar.style.width=(max>0?window.scrollY/max*100:100)+'%';}},{passive:true});
+async function boot() {
+  try {await refresh();readerTheme=state.settings.reader_theme||'light';readerSize=state.settings.reader_size||20;for(const j of state.jobs) if(['done','failed','interrupted'].includes(j.status)) knownJobIds.add(j.id);updateTask();setInterval(poll,1800);}
+  catch(e) {$('#app').innerHTML=`<div class="error-full"><div class="brand-mark">d<span>e</span></div><h1 style="margin-top:25px">Your reading room needs a moment.</h1><p>${esc(e.message)}</p><p>Close this window and reopen Daily Edition from its launcher.</p></div>`;}
+}
+boot();

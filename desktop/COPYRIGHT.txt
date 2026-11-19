@@ -1,0 +1,12 @@
+Daily Edition
+Copyright (c) 2026 Arbaaz Khan. All rights reserved.
+
+Daily Edition is proprietary software, provided free of charge for use on your
+own computer. Its application source code is not offered under an open-source
+license. This notice does not grant permission to publish or relicense that
+source code.
+
+Third-party components retain their own copyrights and licenses. Their license
+terms and rights, including rights concerning replacement or modification of
+LGPL libraries, apply independently. See THIRD_PARTY_NOTICES and licenses/ in
+the desktop release.

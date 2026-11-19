@@ -29,6 +29,16 @@ logs/
 
 # Python and editor files
 .venv/
+.desktop-venv/
+build/
+dist/
+desktop-data/
+*.sqlite3*
+*.spec
+*.tar.gz
+*.AppImage
+credentials.json
+runtime.json
 venv/
 __pycache__/
 *.py[cod]

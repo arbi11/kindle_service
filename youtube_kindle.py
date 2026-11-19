@@ -935,37 +935,11 @@ def email_body(name: str, summaries: list[Summary]) -> tuple[str, str]:
 
 
 def build_epub(name: str, summaries: list[Summary], slot: datetime, out_dir: Path) -> Path:
-    from ebooklib import epub
-
-    book = epub.EpubBook()
-    book.set_identifier(f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, APP + ':' + name + ':' + slot.isoformat())}")
-    book.set_title(name)
-    book.set_language("en")
-    book.add_author("YouTube digest")
-    css = epub.EpubItem(uid="style", file_name="style.css", media_type="text/css",
-                        content=rk.CSS + "p { margin: 0 0 .8em; text-indent: 0; } a.ts { font-size: .75em; color: #777; "
-                                         "text-decoration: none; margin-right: .3em; } li { margin-bottom: .4em; }")
-    book.add_item(css)
-    chapters = []
-    intro = epub.EpubHtml(title="Today's videos", file_name="overview.xhtml", lang="en")
-    intro.content = overview_html(summaries, name)
-    intro.add_item(css)
-    chapters.append(intro)
-    for n, s in enumerate(summaries, 1):
-        ch = epub.EpubHtml(title=s.video["title"], file_name=f"v{n:02d}.xhtml", lang="en")
-        ch.content = chapter_html(s)
-        ch.add_item(css)
-        chapters.append(ch)
-    for ch in chapters:
-        book.add_item(ch)
-    book.toc = chapters
-    book.add_item(epub.EpubNcx())
-    book.add_item(epub.EpubNav(title="Contents"))
-    book.spine = ["nav", *chapters]
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{name}.epub"
-    epub.write_epub(str(path), book, {})
-    return path
+    from epub_writer import write_epub
+    chapters = [("Today's videos", overview_html(summaries, name))]
+    chapters += [(s.video["title"], chapter_html(s)) for s in summaries]
+    return write_epub(out_dir / f"{name}.epub", name, chapters, author="YouTube digest", css=rk.CSS,
+                      identifier=f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, APP + ':' + name + ':' + slot.isoformat())}")
 
 
 def overview_words(summaries: list[Summary]) -> int:
