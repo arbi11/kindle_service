@@ -31,6 +31,8 @@ const icons = {
   moon:'<path d="M20 14A9 9 0 0 1 10 3a9 9 0 1 0 10 11Z"/>',
   type:'<path d="m3 19 6-14 6 14M5 14h8M17 11h6m-3 0v8"/>',
   folder:'<path d="M3 6V4h7l2 3h9v13H3z"/>',
+  expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/>',
+  chevron:'<path d="m7 10 5 5 5-5"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
 let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
@@ -38,6 +40,7 @@ let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme
 let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
 let refreshEpoch = 0;
 let activeJob = null, knownJobIds = new Set(), sourceKind = 'youtube', searchTimer;
+let digestConnection = 'all', previewItemId = null, readerReturnScroll = 0;
 const dialog = $('#modal');
 
 async function api(path, method='GET', body) {
@@ -69,14 +72,33 @@ async function refresh(renderPage=true) {
 }
 function navigation(next) {
   view = next; currentItem = null; currentEdition = null;
+  previewItemId = null;
   if (next !== 'library') filters = {kind:'all',status:'all',q:''};
   window.scrollTo(0,0); refresh().catch(e => toast(e.message,true));
 }
 function render() {
   if (!state) return;
   if (currentItem) { renderReader(); return; }
-  const nav = [['today','home','Today'],['library','book','Library'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
-  $('#app').innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">d<span>e</span></div><div><div class="brand-name">Daily Edition</div><div class="brand-caption">A little more reading</div></div></div><div class="nav-label">Your reading room</div><nav class="nav" aria-label="Main navigation">${nav.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span>${id==='library'&&state.stats.unread?`<b class="badge">${state.stats.unread}</b>`:''}</button>`).join('')}</nav><div class="sidebar-foot"><div class="privacy-icon">${icon('shield')}</div><strong>Your reading. Your device.</strong><p>No account. No shared library.<br>Just a little space for yourself.</p><div class="version"><span>Daily Edition</span><span>v${esc(state.version)}</span></div></div></aside><main class="main"><header class="topbar"><span class="eyebrow">Your personal reading room</span><div class="top-actions"><span class="local-pill"><i class="dot"></i> On this device</span><button class="icon-btn" data-nav="settings" aria-label="Open settings">${icon('settings')}</button></div></header><div id="page">${currentEdition?editionPage():({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)()}</div></main></div>`;
+  const connections = [['all','home','All articles'],['youtube','video','YouTube'],['raindrop','cloud','Raindrop']];
+  const tools = [['library','book','Library'],['sources','layers','Manage connections'],['delivery','mail','Delivery'],['settings','settings','Settings']];
+  const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
+  $('#app').innerHTML = `
+    <div class="shell digest-shell">
+      <aside class="sidebar">
+        <div class="digest-brand">${icon('book')}<span>Daily Edition</span></div>
+        <div class="nav-label" id="connections-label">Connections</div>
+        <nav class="nav connection-nav" aria-labelledby="connections-label">
+          ${connections.map(([id,i,title]) => `<button data-connection="${id}" aria-label="${title}" class="${view==='today'&&!currentEdition&&digestConnection===id?'active':''}" ${view==='today'&&!currentEdition&&digestConnection===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
+        </nav>
+        <div class="sidebar-foot">
+          <nav class="nav utility-nav" aria-label="App settings and library">
+            ${tools.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
+          </nav>
+          <div class="version"><span class="local-pill"><i class="dot"></i> On this device</span><span>v${esc(state.version)}</span></div>
+        </div>
+      </aside>
+      <main class="main" id="main-content">${page}</main>
+    </div>`;
 }
 function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
 function empty(title, text, button='', i='book') { return `<div class="empty"><div class="empty-icon">${icon(i)}</div><h2>${title}</h2><p>${text}</p>${button}</div>`; }
@@ -85,10 +107,63 @@ function itemRow(item,index=0) {
   return `<article class="article-row ${item.is_read?'is-read':''}" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-no">${String(index+1).padStart(2,'0')}</div><div class="article-copy"><div class="article-meta">${sourceIcon(item.kind)}<span>${esc(item.author || (item.kind==='video'?'Video':'Article'))}</span><span>·</span><span>${minutes(item.words)} min read</span>${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div></div><div class="row-end">${!item.is_read?'<i class="read-dot" title="Unread"></i>':''}<button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`;
 }
 function tabs() { return `<div class="tabs" aria-label="Filter reading">${[['all','Everything'],['article','Articles'],['video','Videos']].map(([id,text]) => `<button data-filter="kind" data-value="${id}" class="${filters.kind===id?'active':''}" aria-pressed="${filters.kind===id}">${text}</button>`).join('')}<button data-filter="status" data-value="${filters.status==='saved'?'all':'saved'}" class="${filters.status==='saved'?'active':''}" aria-pressed="${filters.status==='saved'}">${icon('bookmark')} Saved</button></div>`; }
+function itemConnection(item) {
+  const source = state.sources.find(source => source.id === item.source_id);
+  if (source) return source.kind;
+  if (item.kind === 'video') return 'youtube';
+  // Offline examples demonstrate the two connections without connecting an account.
+  return item.is_sample ? 'raindrop' : null;
+}
+function digestItems() {
+  return items.filter(item => digestConnection === 'all' || itemConnection(item) === digestConnection)
+    .sort((a,b) => (Date.parse(b.published) || Date.parse(b.created_at) || 0) - (Date.parse(a.published) || Date.parse(a.created_at) || 0));
+}
+function previewContent(item) {
+  const document = new DOMParser().parseFromString(item.summary_html || item.body_html, 'text/html');
+  const paragraphs = [...document.querySelectorAll('p')].map(p => p.textContent.trim()).filter(Boolean);
+  const blocks = (paragraphs.length ? paragraphs : [document.body.textContent.trim()]).slice(0,2);
+  let remaining = 180;
+  return blocks.map(block => {
+    if (!remaining) return '';
+    const words = block.split(/\s+/), truncated = words.length > remaining;
+    const text = words.slice(0,remaining).join(' ');
+    remaining = Math.max(0, remaining - words.length);
+    return `<p>${esc(text)}${truncated?'…':''}</p>`;
+  }).join('');
+}
+function digestArticle(item) {
+  const expanded = previewItemId === item.id;
+  const connection = itemConnection(item);
+  const connectionName = {youtube:'YouTube',raindrop:'Raindrop'}[connection];
+  return `<article class="digest-article ${expanded?'is-expanded':''} ${item.is_read?'is-read':''}" data-item-id="${esc(item.id)}">
+    <header class="digest-article-header" data-action="preview" data-id="${esc(item.id)}">
+      <div class="article-meta">${sourceIcon(item.kind)}${connectionName?`<span class="connection-name">${connectionName}</span><span class="meta-divider">·</span>`:''}<span>${esc(item.author || 'Saved article')}</span><span class="meta-divider">·</span><time datetime="${esc(item.published)}">${shortDate(item.published)}</time>${sample(item)}</div>
+      <h2><button class="digest-title" id="title-${esc(item.id)}" data-action="preview" data-id="${esc(item.id)}" aria-expanded="${expanded}" aria-controls="preview-${esc(item.id)}"><span>${esc(item.title)}</span>${icon('chevron')}</button></h2>
+      ${!expanded?`<p class="digest-excerpt">${esc(excerpt(item))}</p>`:''}
+      <div class="digest-item-info"><span>${minutes(item.words)} min read</span><span>${item.kind==='video'?'Video summary':'Article'}</span>${item.is_read?'<span>Read</span>':''}</div>
+    </header>
+    <section class="article-preview" id="preview-${esc(item.id)}" aria-labelledby="title-${esc(item.id)}" ${expanded?'':'hidden'}>
+      <div class="preview-heading"><span>Preview</span><button class="text-btn expand-article" data-action="read" data-id="${esc(item.id)}">${icon('expand')} Expand</button></div>
+      <div class="preview-prose">${expanded?previewContent(item):''}</div>
+    </section>
+  </article>`;
+}
+function readingRail() {
+  const s = state.settings;
+  return `<aside class="rail" aria-label="Your reading routine"><div class="rail-card"><div class="small-label">A little daily ritual</div><h3 style="margin-top:10px">Make time for a good read.</h3><div class="label">YOUR DAILY READING BUDGET</div><div class="value">${s.reading_minutes} <span style="font-size:13px">minutes</span></div><div class="line"></div><div class="routine-row"><span>Following</span><strong>${state.sources.filter(x=>x.enabled).length} sources</strong></div><div class="routine-row"><span>Ready to read</span><strong>${state.stats.unread} pieces</strong></div><div class="routine-row"><span>Delivery</span><strong>${s.schedule_enabled?'Scheduled':'On your time'}</strong></div><div class="line"></div><button class="text-btn" data-nav="delivery">Set your routine ${icon('arrow')}</button></div><div class="quote-card"><div class="quote-mark">“</div><blockquote>Attention is the beginning of a good read.</blockquote><div class="caption">A small reminder to slow down</div></div></aside>`;
+}
 function todayPage() {
-  const edition = latestEdition(), s = state.settings;
-  const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:s.timezone});
-  return `<section class="hero"><div><div class="date">${icon('sun')} ${esc(date)}</div><h1>Good things,<br><em>gathered for you.</em></h1><p>A quieter way to keep up with the things you care about.</p></div><div class="hero-action"><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button><div class="hint">${icon('clock')} ${state.next_run?'Next edition at '+timeOf(state.next_run):'A little reading, whenever you’re ready'}</div></div></section>${!s.onboarding_done?`<div class="setup-card"><div class="setup-icon">${icon('leaf')}</div><div class="setup-text">A reading routine that feels like yours.<p>Add a few sources and bring your own AI key to begin.</p></div><button class="btn secondary" data-action="setup">Make it yours ${icon('arrow')}</button>${state.legacy_available?'<button class="text-btn" data-action="import">Import existing setup</button>':''}</div>`:''}<div class="dashboard"><div>${edition?`<section class="edition-feature"><div><div class="eyebrow">${icon('book')} ${edition.is_sample?'YOUR FIRST LOOK · SAMPLE EDITION':'YOUR LATEST EDITION'}</div><h2>${esc(edition.title)}</h2><p>${edition.item_count} pieces to settle into. About ${minutes(edition.words)} minutes of good reading.</p></div><div class="feature-bottom"><button class="btn light" data-action="edition" data-id="${edition.id}">Open edition ${icon('arrow')}</button><span>${edition.is_sample?'Get a feel for the reader':shortDate(edition.created_at)+' · Prepared on your device'}</span></div></section>`:empty('Your first edition starts here','Follow a few sources, then prepare an edition.','<button class="btn" data-nav="sources">Choose sources</button>')}<div class="section-heading"><h2>On your reading list<span class="count">${items.length} pieces</span></h2><button class="text-btn" data-nav="library">View library ${icon('arrow')}</button></div>${tabs()}<div class="article-list">${items.slice(0,6).map(itemRow).join('') || '<div class="inline-empty">A fresh reading list is on its way. Add sources to get started.</div>'}</div></div><aside class="rail"><div class="rail-card"><div class="small-label">A little daily ritual</div><h3 style="margin-top:10px">Make time for a good read.</h3><div class="label">YOUR DAILY READING BUDGET</div><div class="value">${s.reading_minutes} <span style="font-size:13px">minutes</span></div><div class="line"></div><div class="routine-row"><span>Following</span><strong>${state.sources.filter(x=>x.enabled).length} sources</strong></div><div class="routine-row"><span>Ready to read</span><strong>${state.stats.unread} pieces</strong></div><div class="routine-row"><span>Delivery</span><strong>${s.schedule_enabled?'Scheduled':'On your time'}</strong></div><div class="line"></div><button class="text-btn" data-nav="delivery">Set your routine ${icon('arrow')}</button></div><div class="quote-card"><div class="quote-mark">“</div><blockquote>Attention is the beginning of a good read.</blockquote><div class="caption">A small reminder to slow down</div></div></aside></div><p class="footer-note">Gathered on your device. Read at your pace.</p>`;
+  const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
+  const articles = digestItems();
+  const connection = {all:'All connections',youtube:'YouTube',raindrop:'Raindrop'}[digestConnection];
+  return `<div class="digest-layout">
+    <section class="digest-feed" aria-labelledby="digest-title">
+      <header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1 id="digest-title">Readers Digest</h1></header>
+      <div class="digest-toolbar"><div class="digest-context"><span>${connection}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'article':'articles'}</span></div><label class="digest-sort" for="digest-sort"><span>Sort by</span><select id="digest-sort"><option value="recent">Most recent</option><option value="relevant" disabled>Most relevant</option></select></label></div>
+      <div class="digest-list">${articles.map(digestArticle).join('') || `<div class="digest-empty"><h2>No articles here yet</h2><p>${digestConnection==='all'?'Articles from your connections will appear here.':`Articles from ${connection} will appear here.`}</p></div>`}</div>
+    </section>
+    ${readingRail()}
+  </div>`;
 }
 function libraryPage() {
   return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
@@ -114,10 +189,12 @@ function editionPage() {
   return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to ${view==='library'?'library':'today'}</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
 }
 async function openReader(id) {
+  if (!currentItem) readerReturnScroll = window.scrollY;
   currentItem = await api('/items/'+id); readerTab = currentItem.summary_html?'summary':'original'; lastView=view; renderReader(); window.scrollTo(0,0);
 }
 function renderReader() {
-  const item=currentItem, next=items[items.findIndex(i=>i.id===item.id)+1];
+  const item=currentItem, queue=view==='today'?digestItems():items;
+  const position=queue.findIndex(i=>i.id===item.id), next=position>=0?queue[position+1]:null;
   $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand">Daily Edition</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
 }
 function modal(content, eyebrow='YOUR DAILY EDITION') {
@@ -198,9 +275,14 @@ document.addEventListener('submit',async event=>{
   } finally {if(button?.isConnected) button.disabled=false;}
 });
 document.addEventListener('click',async event=>{
-  const target=event.target.closest('[data-action],[data-nav],[data-filter]');if(!target) return;
+  const target=event.target.closest('[data-action],[data-nav],[data-filter],[data-connection]');if(!target) return;
   event.stopPropagation();
   try {
+    if(target.dataset.connection) {
+      digestConnection=target.dataset.connection;
+      navigation('today');
+      return;
+    }
     if(target.dataset.nav) {navigation(target.dataset.nav);return;}
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
@@ -213,10 +295,17 @@ document.addEventListener('click',async event=>{
     else if(a==='import') {modal(`<h2 id="modal-title">Bring your existing setup along.</h2><p class="description">Copy your laptop service’s sources, AI and email settings, delivery history identifiers, and up to eight recent editions into Daily Edition.</p><div class="setting-info">Your existing service keeps running. Automatic preparation and sending start paused in this app. Enable them in Delivery when you are ready to switch.</div><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep exploring</button><button class="btn" data-action="confirm-import">Import setup ${icon('arrow')}</button></div>`);}
     else if(a==='confirm-import') {dialog.close();await startTask('import_legacy');}
     else if(a==='upload') $('#epub-file').click();
+    else if(a==='preview') {
+      const scroll=window.scrollY;
+      previewItemId=previewItemId===id?null:id;
+      render();
+      window.scrollTo(0,scroll);
+      if(target.matches('button')) document.getElementById('title-'+id)?.focus({preventScroll:true});
+    }
     else if(a==='read') await openReader(id);
     else if(a==='edition') {currentEdition=await api('/editions/'+id);currentItem=null;render();window.scrollTo(0,0);}
     else if(a==='back-edition') {currentEdition=null;render();}
-    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,0);}
+    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);document.getElementById('title-'+previewItemId)?.focus({preventScroll:true});}
     else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
     else if(a==='reader-theme') {readerTheme={light:'sepia',sepia:'dark',dark:'light'}[readerTheme]||'light';localStorage.setItem('readerTheme',readerTheme);await api('/settings','POST',{settings:{reader_theme:readerTheme}});const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}
     else if(a==='font-smaller'||a==='font-larger') {readerSize=Math.min(28,Math.max(16,readerSize+(a==='font-larger'?1:-1)));localStorage.setItem('readerSize',readerSize);await api('/settings','POST',{settings:{reader_size:readerSize}});$('.reader-shell').style.setProperty('--reader-size',readerSize+'px');}

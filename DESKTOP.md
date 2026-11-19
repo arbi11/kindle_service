@@ -4,6 +4,34 @@ Daily Edition is a free proprietary desktop reader. This 0.1.0 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
+## Readers Digest design preview
+
+The `desktop-redesign` branch contains the agreed three-column layout:
+
+- **Connections** on the left: All articles, YouTube, and Raindrop. A connection
+  filters the middle feed; All articles restores the combined feed.
+- **Readers Digest** in the middle, with the date, a compact article list, and
+  Most recent ordering. Selecting an article opens a preview beneath its title.
+  Expand opens the existing reader; Back restores the feed and its open preview.
+- The existing reading budget, followed-source count, unread count, delivery
+  status, routine link, and quote on the right.
+
+Most relevant appears as an inactive sort option. Its ranking rules must be
+discussed before implementation. Other configuration screens and Library are
+retained from v0.1 and have not been redesigned in this step.
+
+On the development laptop, open **Daily Edition Preview** from the applications
+menu or run `~/.local/bin/daily-edition-preview`. This uses a separate sample
+library with scheduling disabled. The installed v0.1 app is still **Daily Edition**.
+
+To run the preview from a prepared development checkout:
+
+```sh
+.desktop-venv/bin/python daily_edition.py --data-dir artifacts/redesign-preview --no-keyring --no-scheduler
+```
+
+The instructions below describe the v0.1 setup and delivery flows.
+
 ## Install the packaged app
 
 Extract the release archive, open its DailyEdition folder, and run `install.sh`.

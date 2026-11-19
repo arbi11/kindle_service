@@ -3,12 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const {execFileSync} = require('node:child_process');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 (async()=>{
   const runtimePath = process.argv[2];
   if(!runtimePath) throw new Error('Pass the isolated app runtime.json path');
   const runtime = JSON.parse(fs.readFileSync(runtimePath,'utf8'));
+  // These offsets deliberately differ from lexicographic order. The feed must
+  // show the actual newest article first, independently of the source timezone.
+  execFileSync('python3',['-c',`
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    assert db.execute('SELECT COUNT(*) FROM items WHERE is_sample=0').fetchone()[0] == 0, 'Use a fresh isolated sample profile'
+    rows = [('2026-11-19T02:00:00+00:00','sample-0'), ('2026-11-19T08:30:00+05:30','sample-1'), ('2026-11-19T04:00:00+00:00','sample-2')]
+    db.executemany('UPDATE items SET published=? WHERE external_id=? AND is_sample=1', rows)
+`,path.join(path.dirname(runtimePath),'library.sqlite3')]);
   const output = path.resolve(path.dirname(runtimePath),'screenshots');fs.mkdirSync(output,{recursive:true});
   const fixture = http.createServer((request,response)=>{
     response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
@@ -26,12 +36,40 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   const click=async(action,id)=>{await page.locator(`[data-action="${action}"]${id?`[data-id="${id}"]`:''}`).first().click();};
   try {
     await page.goto(`http://127.0.0.1:${runtime.port}/?session=${runtime.token}`);
-    await page.getByRole('heading',{name:'Good things, gathered for you.'}).waitFor();
-    assert.equal(await page.locator('.article-row').count(),3);await shot('01-today');
-    await click('read');await page.locator('.prose').waitFor();
+    await page.getByRole('heading',{name:'Readers Digest',exact:true}).waitFor();
+    assert.equal(await page.locator('.digest-article').count(),3);
+    assert.deepEqual(await page.locator('.digest-title > span').allTextContents(),['Your reading, at your pace','A summary that keeps the story intact','Make a little room for a good read']);
+    assert.equal(await page.locator('.hero,.edition-feature,.setup-card').count(),0);
+    await page.getByRole('button',{name:'YouTube',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===1);
+    assert.match(await page.locator('.digest-article .connection-name').innerText(),/YouTube/);
+    await click('preview');await click('read');await page.locator('.prose').waitFor();
+    assert.equal(await page.getByRole('button',{name:'Read next piece',exact:true}).count(),0);
+    await click('reader-back');await page.locator('.article-preview:not([hidden])').waitFor();
+    assert.equal(await page.locator('[data-connection="youtube"]').getAttribute('aria-current'),'page');
+    await page.getByRole('button',{name:'Raindrop',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===2);
+    await nav('All articles');
+    await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===3);
+    assert.equal(await page.locator('#digest-sort').inputValue(),'recent');
+    assert.equal(await page.locator('#digest-sort option[value="relevant"]').evaluate(option=>option.disabled),true);
+    await shot('01-today');
+    await click('preview');
+    await page.locator('.article-preview:not([hidden])').waitFor();
+    assert.equal(await page.locator('.reader-shell').count(),0);
+    assert.equal(await page.locator('.digest-title[aria-expanded="true"]').count(),1);
+    await shot('01b-inline-preview');
+    await page.locator('.digest-title').nth(1).click();
+    assert.equal(await page.locator('.article-preview:not([hidden])').count(),1);
+    await page.locator('.digest-title').nth(1).press('Space');
+    assert.equal(await page.locator('.article-preview:not([hidden])').count(),0);
+    await click('preview');await click('read');await page.locator('.prose').waitFor();
     await click('font-larger');await page.waitForFunction(()=>getComputedStyle(document.querySelector('.prose')).fontSize==='21px');
     await click('reader-theme');await click('reader-theme');await page.locator('.reader-shell.dark').waitFor();await shot('02-reader-dark');
     await click('star');await click('mark-read');await click('reader-back');
+    await page.locator('.article-preview:not([hidden])').waitFor();
+    assert.equal(await page.locator('.article-preview:not([hidden])').count(),1);
+    assert.equal(await page.locator('.digest-article.is-read').count(),1);
     await nav('Library');await page.locator('[data-filter="status"]').click();
     await page.waitForFunction(()=>document.querySelectorAll('.reading-card').length===1);
     assert.equal(await page.locator('.reading-card').count(),1);
@@ -41,7 +79,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.getByRole('heading',{name:'A little space for something good.'}).waitFor();
     await page.getByRole('textbox',{name:'Search your library'}).fill('');
     await page.waitForFunction(()=>document.querySelectorAll('.reading-card').length===3);await shot('03-library');
-    await nav('Sources');await click('add-source');
+    await nav('Manage connections');await click('add-source');
     await page.locator('[data-action="source-tab"][data-value="article"]').click();
     await page.getByLabel('Article URL',{exact:true}).fill(fixtureUrl);
     await page.getByRole('button',{name:'Add article',exact:true}).click();
@@ -49,15 +87,19 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await click('toggle-source');await page.waitForFunction(()=>document.querySelector('[role="switch"]').getAttribute('aria-checked')==='false');
     await click('toggle-source');await page.waitForFunction(()=>document.querySelector('[role="switch"]').getAttribute('aria-checked')==='true');
     await shot('04-sources');
-    await nav('Today');await click('prepare');
+    await nav('Library');await click('prepare');
     await page.getByText(/Your edition is ready: 1 pieces/).first().waitFor({timeout:30000});
-    await page.waitForFunction(()=>document.querySelectorAll('.article-row').length===1);
-    assert.match(await page.locator('.article-row h3').innerText(),/A useful local reading test/);await shot('05-prepared');
-    await click('read');await page.locator('.prose').waitFor();
+    await nav('All articles');
+    await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===1);
+    assert.match(await page.locator('.digest-title').innerText(),/A useful local reading test/);await shot('05-prepared');
+    await nav('Raindrop');
+    await page.getByRole('heading',{name:'No articles here yet',exact:true}).waitFor();
+    await nav('All articles');
+    await click('preview');await click('read');await page.locator('.prose').waitFor();
     assert.match(await page.locator('.prose').innerText(),/\$3 million/);
     assert.match(await page.locator('.prose').innerText(),/\$2 million/);
     await click('reader-theme');await shot('06-reader');await click('reader-back');
-    await click('edition');await page.locator('.edition-summary').waitFor();
+    await nav('Library');await click('edition');await page.locator('.edition-summary').waitFor();
     const downloadPromise=page.waitForEvent('download');
     await page.getByRole('link',{name:'EPUB',exact:true}).click();
     const download=await downloadPromise;await download.saveAs(path.join(output,'test-edition.epub'));
@@ -88,7 +130,12 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(boot.deliveries.length,0);assert.equal(boot.settings.schedule_enabled,false);
     assert.equal(boot.settings.summary_words,450);
     assert.equal(errors.length,0,errors.join('\n'));assert.equal(externalRequests.length,0,externalRequests.join('\n'));
-    await page.setViewportSize({width:1000,height:800});await nav('Library');await shot('10-small-desktop');
-    console.log(JSON.stringify({result:'PASS',checks:['reader themes and font persistence','save and read state','search and filters','source creation and toggles','real local article extraction','edition generation','EPUB download','settings and secret masking','email preview without sending','no external browser requests','no JavaScript errors'],screenshots:output}));
+    await page.setViewportSize({width:1000,height:800});await nav('All articles');await shot('10-small-desktop');
+    assert.equal(await page.locator('.rail').isVisible(),true);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.setViewportSize({width:900,height:700});
+    assert.equal(await page.locator('.rail').isVisible(),true);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    console.log(JSON.stringify({result:'PASS',checks:['connection filtering and combined startup feed','inline previews and keyboard controls','expand and return to preview','reading panel at laptop widths','reader themes and font persistence','save and read state','search and filters','source creation and toggles','real local article extraction','edition generation','EPUB download','settings and secret masking','email preview without sending','no external browser requests','no JavaScript errors'],screenshots:output}));
   } finally {await browser.close();fixture.close();}
 })().catch(error=>{console.error(error.stack);process.exit(1);});

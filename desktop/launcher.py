@@ -70,7 +70,7 @@ def native_window(url, service, background=False, screenshot=None):
                 app.quit()
 
     window = Window()
-    window.setWindowTitle("Daily Edition")
+    window.setWindowTitle("Daily Edition — Design preview")
     window.resize(1360, 900)
     window.setMinimumSize(900, 640)
     profile = QWebEngineProfile(window)  # Off-the-record profile; library lives in our database.
