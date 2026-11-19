@@ -1,0 +1,12 @@
+[Unit]
+Description=Raindrop to Kindle: check on login, after wake, and every 5 minutes
+
+[Timer]
+# Runs shortly after login, then on every 5-minute mark. After suspend, the
+# missed mark fires right away, which the app treats as "laptop opened".
+OnStartupSec=45s
+OnCalendar=*:0/5
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

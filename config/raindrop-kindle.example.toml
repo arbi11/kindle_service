@@ -1,0 +1,47 @@
+# Raindrop -> Kindle settings. Edit freely; changes apply on the next tick.
+
+# Raindrop test token: app.raindrop.io/settings/integrations -> Create new app -> Create test token
+raindrop_token = ""
+# 0 = all bookmarks (except Trash), -1 = Unsorted, or a collection ID from the Raindrop URL
+collection_id = 0
+
+# Your Send-to-Kindle address(es), e.g. "name_abc@kindle.com"
+kindle_emails = ["your_device@kindle.com"]
+
+[smtp]
+# Gmail: smtp.gmail.com, port 465, and an App Password (myaccount.google.com/apppasswords)
+host = "smtp.gmail.com"
+port = 465
+username = "you@example.com"
+password = ""
+# Must be on Amazon's "Approved Personal Document E-mail List"
+sender = "you@example.com"
+
+[schedule]
+timezone = "Asia/Kolkata"
+bring_forward_minutes = 30
+
+[schedule.slots]
+M = "08:00"
+N = "14:00"
+E = "20:00"
+
+[content]
+include_images = true
+# Use a bookmark's first Raindrop tag as its filename keyword when it has one
+keyword_from_tags = true
+
+[ai]
+# Select one provider explicitly; OpenAI does not fall back to paid OpenRouter calls.
+provider = "openai"
+openai_api_key_file = "~/.config/raindrop-kindle/openai_api_key"
+openai_api_key = ""
+openai_model = "gpt-6-luna"
+openai_candidate_writer = "gpt-6-luna"
+openai_decision_model = "gpt-6-luna"
+# The built-in picker is used if the selected provider is unavailable.
+openrouter_api_key = ""
+decision_model = "~typesafe/jev-latest"
+# Who writes the candidates: "built-in" (free, on this laptop) or an OpenRouter chat
+# model such as "z-ai/glm-5.3-flash" (~$0.0002 per batch, more varied ideas).
+candidate_writer = "built-in"

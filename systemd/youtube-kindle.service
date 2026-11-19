@@ -1,0 +1,11 @@
+[Unit]
+Description=YouTube to Kindle: find new videos, transcribe, send a batch if one is due
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/raindrop-kindle/.venv/bin/python %h/.local/share/raindrop-kindle/youtube_kindle.py tick
+# Local transcription can take a while; keep it in the background
+Nice=15
+CPUWeight=20
+IOWeight=20
+TimeoutStartSec=3h

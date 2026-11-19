@@ -1,0 +1,10 @@
+[Unit]
+Description=YouTube to Kindle: check on login, after wake, and every 5 minutes
+
+[Timer]
+OnStartupSec=2min
+OnCalendar=*:0/5
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

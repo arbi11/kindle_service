@@ -1,0 +1,8 @@
+[Unit]
+Description=Raindrop to Kindle: send a batch if one is due
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/raindrop-kindle/.venv/bin/python %h/.local/share/raindrop-kindle/raindrop_kindle.py tick
+Nice=10
+TimeoutStartSec=15min

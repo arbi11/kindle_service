@@ -1,0 +1,39 @@
+# Credentials and real configuration
+.secrets/
+.env
+.env.*
+!.env.example
+config.toml
+**/openai_api_key
+**/openrouter_api_key
+channels.json
+*.key
+*.pem
+
+# Local state, private content and generated previews
+state.json
+backups/
+artifacts/
+books/
+transcripts/
+cache/
+logs/
+*.epub
+*.srt
+*.vtt
+*.mp3
+*.m4a
+*.wav
+*.part
+*.log
+
+# Python and editor files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.DS_Store
+.idea/
+.vscode/

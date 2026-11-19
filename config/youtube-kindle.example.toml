@@ -1,0 +1,39 @@
+# YouTube -> Kindle settings. Email, Kindle address and AI provider are shared
+# with raindrop-kindle (~/.config/raindrop-kindle/config.toml).
+
+# What the summaries should focus on. Plain words are fine; one topic per line.
+interests = """
+Technology, science, and markets.
+"""
+
+# Length of each video's story in Kindle pages (about 260 words per page).
+# Jev picks a length in this range for each video, based on your interests.
+min_pages_per_video = 1
+max_pages_per_video = 2
+
+# OpenRouter model that writes the stories (GLM 5.3 Flash: ~$0.001 per video), and the
+# one that trims a story that runs well past its length (Claude Haiku: ~$0.0007 per edit)
+summary_model = "z-ai/glm-5.3-flash"
+editor_model = "anthropic/claude-haiku-5.5"
+# Models used when the shared AI provider is OpenAI.
+openai_summary_model = "gpt-6-luna"
+openai_editor_model = "gpt-6-luna"
+
+[schedule]
+bring_forward_minutes = 30
+
+[schedule.slots]
+# Letter = "HH:MM Timezone". U = before the US market opens (9:30 New York time).
+M = "10:00 Asia/Kolkata"
+U = "08:30 America/New_York"
+
+[transcribe]
+# When YouTube captions aren't available: a fast cloud transcriber on OpenRouter
+# (~$0.034 per hour of audio). It sends at most the first N minutes of any video and
+# at most M minutes per run; Whisper on this laptop is the backup.
+cloud_model = "google/gemini-2.5-flash-lite"
+openai_model = "gpt-transcribe"
+cloud_max_minutes_per_video = 30
+cloud_minutes_per_run = 90
+whisper_model = "small"
+threads = 4
