@@ -23,6 +23,7 @@ import raindrop_kindle as rk
 import youtube_kindle as yt
 from .content import sanitize, plain_text, paragraphs_html, render_newsletter
 from .store import now, uid
+from .connections import Catalogue, Feed
 
 log = logging.getLogger("daily-edition")
 
@@ -30,6 +31,7 @@ log = logging.getLogger("daily-edition")
 class Engine:
     def __init__(self, store, secrets):
         self.store, self.secrets = store, secrets
+        self.catalogue = Catalogue()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="edition-worker")
         self.task_lock = threading.Lock()
         self.schedule_lock = threading.Lock()
@@ -145,30 +147,24 @@ class Engine:
         return str(content["takeaway"]), paragraphs_html(content["paragraphs"])
 
     def collect_articles(self, session, source, since, remaining, job_id):
-        s, shared = self.store.settings(), self.config()["shared"]
-        if source["kind"] == "raindrop":
-            if not self.secrets.get("raindrop_token"):
-                raise ValueError("Connect Raindrop in Sources to collect saved articles")
-            shared["collection_id"] = int(source["detail"].get("collection_id", 0))
-            bookmarks = rk.fetch_new_bookmarks(session, shared, {"sent": {}}, since=since)
-            tags = source["detail"].get("tags", [])
-            if tags:
-                bookmarks = [bm for bm in bookmarks if set(tags).intersection(bm.get("tags", []))]
-        else:
-            bookmarks = [{"_id": source["url"], "link": source["url"], "title": "", "created": now()}]
+        s = self.store.settings()
+        connection = self.catalogue.get(source["kind"])
+        token = self.secrets.get("raindrop_token") if connection.definition["adapter"] == "raindrop" else ""
+        bookmarks = connection.discover(session, source, since, token=token)
+        transport = connection.http(session) if isinstance(connection, Feed) else session
         added, errors, attempted = 0, [], 0
         for bookmark in bookmarks:
             if attempted >= remaining or getattr(self, "_attempts_left", remaining) <= 0:
                 break
-            external_id = str(bookmark["_id"])
+            external_id = bookmark.external_id
             if self.store.known("article", external_id):
                 continue
             attempted += 1
             self._attempts_left = getattr(self, "_attempts_left", remaining) - 1
             try:
-                self.store.progress(job_id, "Reading " + (bookmark.get("title") or bookmark["link"])[:90] + "…", 30)
-                article = rk.Article(1, bookmark, bookmark.get("title", ""), bookmark["link"])
-                rk.fetch_article(session, article, False, rk.ImageBudget(0))
+                self.store.progress(job_id, "Reading " + (bookmark.title or bookmark.url)[:90] + "…", 30)
+                article = rk.Article(1, {"_id": external_id, "link": bookmark.url}, bookmark.title, bookmark.url)
+                rk.fetch_article(transport, article, False, rk.ImageBudget(0))
                 if not article.body_html or len(plain_text(article.body_html)) < 80:
                     raise ValueError("The full article could not be extracted. It may require sign-in or block automated reading.")
                 body = sanitize(article.body_html)
@@ -176,13 +172,13 @@ class Engine:
                 if s["summarize_articles"] and self.secrets.get(s["provider"] + "_key"):
                     self.store.progress(job_id, "Summarizing " + (article.title or "the article")[:80] + "…", 45)
                     takeaway, summary = self.summarize_article(session, article.title, plain_text(body))
-                self.store.add_item(kind="article", external_id=external_id, title=article.title or bookmark["link"],
-                                    url=article.url, author=article.site or urlparse(article.url).hostname or "Article",
-                                    published=bookmark.get("created") or now(), body_html=body,
+                self.store.add_item(kind="article", external_id=external_id, title=article.title or bookmark.url,
+                                    url=article.url, author=bookmark.author or article.author or article.site or urlparse(article.url).hostname or "Article",
+                                    published=bookmark.published or now(), body_html=body,
                                     summary_html=sanitize(summary), takeaway=takeaway, source_id=source["id"])
                 added += 1
             except Exception as exc:
-                errors.append((bookmark.get("title") or bookmark["link"])[:90] + ": " + self.secrets.redact(exc))
+                errors.append((bookmark.title or bookmark.url)[:90] + ": " + self.secrets.redact(exc))
         return added, errors
 
     def collect_videos(self, session, source, since, remaining, job_id):
@@ -190,14 +186,15 @@ class Engine:
         if not self.secrets.get(s["provider"] + "_key"):
             raise ValueError("Add an AI API key in Settings to summarize videos")
         channel = source["detail"]
-        entries = yt.feed_entries(session, channel)
+        entries = self.catalogue.get(source["kind"]).discover(session, source, since)
         added, errors, attempted = 0, [], 0
         yt._youtube_blocked = False
         budget = getattr(self, "_audio_budget", yt.CloudBudget(float(s["audio_minutes_per_video"])))
-        for video_id, published, video in sorted(entries, key=lambda row: row[1]):
+        for candidate in entries:
+            video_id, video = candidate.external_id, candidate.detail
             if attempted >= remaining or getattr(self, "_attempts_left", remaining) <= 0:
                 break
-            if published < since or self.store.known("video", video_id) or video.get("status") == "skipped":
+            if self.store.known("video", video_id):
                 continue
             attempted += 1
             self._attempts_left = getattr(self, "_attempts_left", remaining) - 1
@@ -240,9 +237,14 @@ class Engine:
             if pending:
                 self.job_send(job_id, {"edition_id": pending["id"], "automatic": True})
         sources = [source for source in self.store.sources() if source["enabled"]]
+        source_id = payload.get("source_id")
+        if source_id:
+            sources = [source for source in sources if source["id"] == source_id]
+            if not sources:
+                raise ValueError("Choose an enabled connection source before fetching articles")
         sources.sort(key=lambda source: (source["checked_at"] or "", source["created_at"]))
         if not sources:
-            raise ValueError("Add a YouTube channel, Raindrop collection or article in Sources first")
+            raise ValueError("Add a connection in Manage connections first")
         remaining, errors, added = s["max_items_per_run"], [], 0
         self._attempts_left = remaining
         self._audio_budget = yt.CloudBudget(float(s["audio_minutes_per_video"]))
@@ -253,7 +255,8 @@ class Engine:
                     break
                 try:
                     self.store.progress(job_id, "Checking " + source["title"] + "…", 10 + i * 10)
-                    collect = self.collect_videos if source["kind"] == "youtube" else self.collect_articles
+                    connection = self.catalogue.get(source["kind"])
+                    collect = self.collect_videos if connection.definition["adapter"] == "youtube" else self.collect_articles
                     allowance = max(1, remaining // (len(sources) - i))
                     n, failures = collect(session, source, since, allowance, job_id)
                     remaining = self._attempts_left

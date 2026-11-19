@@ -4,6 +4,11 @@ The **Daily Edition desktop app** adds a local reading library, source setup,
 AI preferences, and email/Kindle delivery controls. See [desktop installation and
 usage](DESKTOP.md). The original command-line services are documented below.
 
+Desktop v0.2 adds **Your connections / Browse connections**, a reviewed connection
+catalogue, and Freedium's public reading feed alongside YouTube and Raindrop.
+See [community connection development](connections/README.md) to contribute a
+feed connection through GitHub review.
+
 Two services that run on a Linux laptop and email EPUB digests to Kindle:
 
 - **Raindrop to Kindle** collects newly saved bookmarks, extracts articles and images, and builds a book with a short keyword for each article.

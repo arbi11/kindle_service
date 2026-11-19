@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from desktop import __version__
 
 ROOT = Path(__file__).resolve().parent
 
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 def notices(target):
     folder = target / "licenses"
     folder.mkdir(exist_ok=True)
-    lines = ["Daily Edition 0.1.0 — third-party notices", "",
+    lines = [f"Daily Edition {__version__} — third-party notices", "",
         "Qt/PySide6 libraries are dynamically linked and remain replaceable in _internal/.",
         "Their LGPL/GPL/commercial alternatives and notices are reproduced below; only",
         "the Qt modules required by the desktop shell are bundled.",
@@ -61,6 +62,7 @@ def main():
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--name", "DailyEdition",
         "--distpath", str(dist), "--workpath", str(work / "pyinstaller"), "--specpath", str(work),
         "--add-data", str(ROOT / "desktop/ui") + ":desktop/ui",
+        "--add-data", str(ROOT / "connections") + ":connections",
         "--collect-data", "trafilatura", "--collect-data", "justext", "--collect-data", "dateparser",
         "--collect-submodules", "keyring.backends", "--copy-metadata", "keyring",
         "--exclude-module", "wordfreq", "--exclude-module", "faster_whisper",
@@ -76,10 +78,11 @@ def main():
     installer.write_text('#!/bin/sh\nset -eu\nEDITION_INSTALL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec python3 "$EDITION_INSTALL_DIR/install.py" --launch "$@"\n')
     installer.chmod(0o755)
     notices(target)
-    archive = dist / f"daily-edition-0.1.0-linux-{platform.machine()}.tar.gz"
-    with tarfile.open(archive, "w:gz") as output:
+    archive = dist / f"daily-edition-{__version__}-linux-{platform.machine()}.tar.gz"
+    with tarfile.open(archive, "w:gz", compresslevel=3) as output:
         output.add(target, arcname="DailyEdition")
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    with archive.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
     (dist / (archive.name + ".sha256")).write_text(digest + "  " + archive.name + "\n")
     print(f"Desktop release: {archive}", flush=True)
 

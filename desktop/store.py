@@ -86,6 +86,13 @@ class Store:
             CREATE TABLE IF NOT EXISTS seen(kind TEXT NOT NULL, external_id TEXT NOT NULL,
                 PRIMARY KEY(kind,external_id));
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(items)")}
+            if "connection_id" not in columns:
+                db.execute("ALTER TABLE items ADD COLUMN connection_id TEXT NOT NULL DEFAULT ''")
+            db.execute("UPDATE items SET connection_id=COALESCE((SELECT kind FROM sources WHERE id=items.source_id),'') WHERE connection_id=''")
+            db.execute("UPDATE items SET connection_id='youtube' WHERE connection_id='' AND kind='video'")
+            db.execute("UPDATE items SET connection_id='raindrop' WHERE connection_id='' AND is_sample=1 AND kind='article'")
+            db.execute("CREATE INDEX IF NOT EXISTS items_by_connection ON items(connection_id)")
             db.execute("UPDATE jobs SET status='interrupted',message='The app closed during this task. You can try again.',finished_at=? WHERE status IN ('queued','running')", (now(),))
             db.execute("UPDATE deliveries SET status='uncertain',message='The app closed while sending. Check your mailbox before retrying.' WHERE status='sending'")
         self.path.chmod(0o600)
@@ -139,14 +146,17 @@ class Store:
         return bool(self.query("SELECT 1 FROM items WHERE kind=? AND external_id=? UNION ALL SELECT 1 FROM seen WHERE kind=? AND external_id=? LIMIT 1", (kind, external_id, kind, external_id), one=True))
 
     def add_item(self, *, kind, external_id, title, url="", author="", published=None,
-                 body_html="", summary_html="", takeaway="", source_id=None, is_sample=False):
+                 body_html="", summary_html="", takeaway="", source_id=None, is_sample=False, connection_id=""):
         from .content import plain_text
         item_id = uid()
+        if not connection_id and source_id:
+            source = self.query("SELECT kind FROM sources WHERE id=?", (source_id,), one=True)
+            connection_id = source["kind"] if source else ""
         words = len(plain_text(summary_html or body_html).split())
         self.execute("""INSERT OR IGNORE INTO items(id,source_id,kind,external_id,title,url,author,published,
-                     body_html,summary_html,takeaway,words,is_sample,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     body_html,summary_html,takeaway,words,is_sample,created_at,connection_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      (item_id, source_id, kind, external_id, title, url, author, published or now(),
-                      body_html, summary_html, takeaway, words, int(is_sample), now()))
+                      body_html, summary_html, takeaway, words, int(is_sample), now(), connection_id))
         return self.query("SELECT id FROM items WHERE kind=? AND external_id=?", (kind, external_id), one=True)["id"]
 
     def items(self, search="", kind="all", status="all", limit=200):

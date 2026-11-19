@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Daily Edition · arbi11",
+  "id": "raindrop",
+  "name": "Raindrop",
+  "adapter": "raindrop",
+  "description": "Bring saved articles from your Raindrop collections into your reading feed.",
+  "homepage": "https://raindrop.io/",
+  "icon": "cloud",
+  "permissions": [
+    "Read your Raindrop bookmarks and collection names using your token.",
+    "Read the article links saved in the collections you choose."
+  ],
+  "setup": "raindrop"
+}

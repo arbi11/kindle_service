@@ -33,6 +33,7 @@ const icons = {
   folder:'<path d="M3 6V4h7l2 3h9v13H3z"/>',
   expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/>',
   chevron:'<path d="m7 10 5 5 5-5"/>',
+  rss:'<path d="M4 4a16 16 0 0 1 16 16M4 11a9 9 0 0 1 9 9"/><circle cx="5" cy="19" r="1"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
 let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
@@ -41,6 +42,7 @@ let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 't
 let refreshEpoch = 0;
 let activeJob = null, knownJobIds = new Set(), sourceKind = 'youtube', searchTimer;
 let digestConnection = 'all', previewItemId = null, readerReturnScroll = 0;
+let connectionsTab = 'yours';
 const dialog = $('#modal');
 
 async function api(path, method='GET', body) {
@@ -79,7 +81,9 @@ function navigation(next) {
 function render() {
   if (!state) return;
   if (currentItem) { renderReader(); return; }
-  const connections = [['all','home','All articles'],['youtube','video','YouTube'],['raindrop','cloud','Raindrop']];
+  const connections = [['all','home','All articles'], ...(state.catalogue || [])
+    .filter(connection => connection.source_count || items.some(item => itemConnection(item) === connection.id))
+    .map(connection => [connection.id,connection.icon,connection.name])];
   const tools = [['library','book','Library'],['sources','layers','Manage connections'],['delivery','mail','Delivery'],['settings','settings','Settings']];
   const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
   $('#app').innerHTML = `
@@ -99,6 +103,7 @@ function render() {
       </aside>
       <main class="main" id="main-content">${page}</main>
     </div>`;
+  updateTask();
 }
 function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
 function empty(title, text, button='', i='book') { return `<div class="empty"><div class="empty-icon">${icon(i)}</div><h2>${title}</h2><p>${text}</p>${button}</div>`; }
@@ -108,6 +113,7 @@ function itemRow(item,index=0) {
 }
 function tabs() { return `<div class="tabs" aria-label="Filter reading">${[['all','Everything'],['article','Articles'],['video','Videos']].map(([id,text]) => `<button data-filter="kind" data-value="${id}" class="${filters.kind===id?'active':''}" aria-pressed="${filters.kind===id}">${text}</button>`).join('')}<button data-filter="status" data-value="${filters.status==='saved'?'all':'saved'}" class="${filters.status==='saved'?'active':''}" aria-pressed="${filters.status==='saved'}">${icon('bookmark')} Saved</button></div>`; }
 function itemConnection(item) {
+  if (item.connection_id) return item.connection_id;
   const source = state.sources.find(source => source.id === item.source_id);
   if (source) return source.kind;
   if (item.kind === 'video') return 'youtube';
@@ -134,7 +140,7 @@ function previewContent(item) {
 function digestArticle(item) {
   const expanded = previewItemId === item.id;
   const connection = itemConnection(item);
-  const connectionName = {youtube:'YouTube',raindrop:'Raindrop'}[connection];
+  const connectionName = state.catalogue?.find(c => c.id === connection)?.name;
   return `<article class="digest-article ${expanded?'is-expanded':''} ${item.is_read?'is-read':''}" data-item-id="${esc(item.id)}">
     <header class="digest-article-header" data-action="preview" data-id="${esc(item.id)}">
       <div class="article-meta">${sourceIcon(item.kind)}${connectionName?`<span class="connection-name">${connectionName}</span><span class="meta-divider">·</span>`:''}<span>${esc(item.author || 'Saved article')}</span><span class="meta-divider">·</span><time datetime="${esc(item.published)}">${shortDate(item.published)}</time>${sample(item)}</div>
@@ -155,7 +161,7 @@ function readingRail() {
 function todayPage() {
   const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
   const articles = digestItems();
-  const connection = {all:'All connections',youtube:'YouTube',raindrop:'Raindrop'}[digestConnection];
+  const connection = digestConnection==='all'?'All connections':state.catalogue?.find(c => c.id === digestConnection)?.name || 'Saved articles';
   return `<div class="digest-layout">
     <section class="digest-feed" aria-labelledby="digest-title">
       <header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1 id="digest-title">Readers Digest</h1></header>
@@ -168,9 +174,53 @@ function todayPage() {
 function libraryPage() {
   return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
 }
+function sourceRow(source) {
+  return `<div class="connected-source" data-source-id="${esc(source.id)}">
+    <div class="connected-source-info"><strong>${esc(source.title)}</strong><p>${source.item_count} ${source.item_count===1?'article':'articles'} · ${source.checked_at?'Checked '+shortDate(source.checked_at):'Not fetched yet'}${!source.enabled?' · Paused':''}</p>${source.error?`<p class="source-error">${esc(source.error)}</p>`:''}</div>
+    <div class="connected-source-actions">
+      <button class="text-btn" data-action="fetch-source" data-id="${esc(source.id)}" ${source.enabled?'':'disabled'} aria-label="Fetch articles from ${esc(source.title)}">${icon('refresh')} Fetch articles</button>
+      <button class="toggle ${source.enabled?'on':''}" role="switch" aria-checked="${Boolean(source.enabled)}" aria-label="${source.enabled?'Pause':'Resume'} ${esc(source.title)}" data-action="toggle-source" data-id="${esc(source.id)}"></button>
+      <button class="icon-btn" data-action="remove-source" data-id="${esc(source.id)}" aria-label="Disconnect ${esc(source.title)}">${icon('trash')}</button>
+    </div>
+  </div>`;
+}
+function connectedGroup(connection) {
+  const sources = state.sources.filter(source => source.kind === connection.id);
+  return `<article class="connection-group" data-connection-id="${esc(connection.id)}">
+    <header class="connection-group-header"><div class="connection-identity">${icon(connection.icon)}<div><h2>${esc(connection.name)}</h2><p>${sources.length} ${sources.length===1?'source':'sources'} · ${sources.filter(s=>s.enabled).length} active</p></div></div>
+      <div class="inline-actions"><button class="text-btn" data-connection="${esc(connection.id)}">Read articles ${icon('arrow')}</button>${connection.setup!=='feed'?`<button class="btn secondary small" data-action="connection-setup" data-id="${esc(connection.id)}">${icon('plus')} ${connection.id==='youtube'?'Add channel':'Add collection'}</button>`:''}</div>
+    </header>${sources.map(sourceRow).join('')}
+  </article>`;
+}
+function catalogueCard(connection) {
+  return `<article class="catalogue-card" data-catalogue-id="${esc(connection.id)}">
+    <div class="catalogue-card-title"><span class="catalogue-icon">${icon(connection.icon)}</span><h2>${esc(connection.name)}</h2><span class="review-label">${icon('check')} Reviewed</span></div>
+    <p class="catalogue-description">${esc(connection.description)}</p>
+    <p class="catalogue-maintainer">Maintained by ${esc(connection.maintainer)}</p>
+    <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.setup==='feed'?'No account needed':connection.id==='youtube'?'Add a channel':'Connect your account'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
+  </article>`;
+}
 function sourcesPage() {
-  const connected = state.secrets.configured.raindrop_token;
-  return heading('Follow what matters.','Your favourite voices and saved articles, without the endless feed.',`<button class="btn" data-action="add-source">${icon('plus')} Add source</button>`) + `<div class="connection-banner"><div class="source-logo raindrop">${icon('cloud')}</div><div class="info"><h3>Bring your saved reading along.</h3><p>${connected?'Raindrop is connected. Choose the collections you want to follow.':'Connect Raindrop to turn your saved articles into a reading edition.'}</p></div><span class="status-chip ${connected?'':'gray'}">${icon(connected?'check':'lock')}${connected?'Connected':'Not connected'}</span><button class="btn secondary small" data-action="connect-raindrop">${connected?'Manage':'Connect Raindrop'}</button></div>${state.sources.length?`<div class="sources-grid">${state.sources.map(source=>`<article class="source-card ${source.enabled?'':'paused'}"><div class="source-top"><div class="source-logo ${source.kind}">${icon(source.kind==='youtube'?'video':source.kind==='raindrop'?'cloud':'article')}</div><button class="toggle ${source.enabled?'on':''}" role="switch" aria-checked="${Boolean(source.enabled)}" aria-label="${source.enabled?'Pause':'Resume'} ${esc(source.title)}" data-action="toggle-source" data-id="${source.id}"></button></div><h3>${esc(source.title)}</h3><div class="source-address">${source.kind==='raindrop'?(source.detail.collection_id===0?'All saved articles':'Collection '+source.detail.collection_id)+(source.detail.tags?.length?' · '+esc(source.detail.tags.join(', ')):''):esc(source.detail.handle || source.url)}</div>${source.error?`<div class="error">${esc(source.error)}</div>`:''}<div class="source-bottom"><span>${source.item_count} pieces collected · ${source.checked_at?'Checked '+shortDate(source.checked_at):'Ready for its first edition'}</span><button class="icon-btn" data-action="remove-source" data-id="${source.id}" aria-label="Remove ${esc(source.title)}">${icon('trash')}</button></div></article>`).join('')}</div>`:empty('A few good sources go a long way.','Start with a YouTube channel, a Raindrop collection, or a single article.','<button class="btn" data-action="add-source">'+icon('plus')+' Add your first source</button>','layers')}<div class="section-note">${icon('info')}<div>Your computer checks these sources when you prepare an edition. Videos use available captions; optional audio transcription can be enabled in Settings.</div></div>`;
+  const catalogue = state.catalogue || [];
+  const connected = catalogue.filter(connection => connection.source_count);
+  const articles = state.sources.filter(source => source.kind==='article');
+  return `<section class="connections-page">
+    ${heading('Manage connections','Choose where your reading comes from.',connectionsTab==='yours'?'<button class="btn secondary small" data-action="connections-tab" data-value="browse">'+icon('plus')+' Add connection</button>':'')}
+    <div class="connections-tabs" role="tablist" aria-label="Connections">
+      <button role="tab" id="connections-yours-tab" aria-controls="connections-panel" aria-selected="${connectionsTab==='yours'}" tabindex="${connectionsTab==='yours'?'0':'-1'}" data-action="connections-tab" data-value="yours">Your connections</button>
+      <button role="tab" id="connections-browse-tab" aria-controls="connections-panel" aria-selected="${connectionsTab==='browse'}" tabindex="${connectionsTab==='browse'?'0':'-1'}" data-action="connections-tab" data-value="browse">Browse connections</button>
+    </div>
+    <div id="connections-panel" role="tabpanel" aria-labelledby="connections-${connectionsTab}-tab">
+      ${connectionsTab==='browse'?`<div class="catalogue-grid">${catalogue.map(catalogueCard).join('')}</div><p class="connections-note">Connections and updates are reviewed before they appear here. <a href="https://github.com/arbi11/kindle_service/tree/community-connections/connections" target="_blank" rel="noopener noreferrer">Contribute a connection ${icon('external')}</a></p>`:
+      `<div class="connected-groups">${connected.map(connectedGroup).join('')}${articles.length?`<article class="connection-group" data-connection-id="article"><header class="connection-group-header"><div class="connection-identity">${icon('article')}<h2>Saved articles</h2></div></header>${articles.map(sourceRow).join('')}</article>`:''}${!connected.length&&!articles.length?'<div class="connections-empty"><h2>No connections yet</h2><p>Choose Add connection to start collecting articles.</p></div>':''}</div><button class="text-btn add-single-article" data-action="add-article">${icon('plus')} Add an article by URL</button>`}
+    </div>
+  </section>`;
+}
+function connectionSetup(id) {
+  const connection = state.catalogue.find(c => c.id===id);
+  if (!connection) return;
+  if (connection.setup!=='feed') {showSourceModal(connection.id);return;}
+  modal(`<h2 id="modal-title">Connect ${esc(connection.name)}</h2><p class="description">${esc(connection.description)}</p><div class="connection-access"><h3>What this connection accesses</h3><ul>${connection.permissions.map(permission=>`<li>${esc(permission)}</li>`).join('')}</ul></div><p class="description">Articles use your existing reading and summary settings. You can pause or disconnect this feed at any time.</p><form id="feed-connection-form" data-connection-id="${esc(connection.id)}"><div id="modal-feedback"></div><button class="btn full" type="submit">Connect ${esc(connection.name)}</button></form>`,'ADD CONNECTION');
 }
 function field(name,label,value,type='text',hint='',extra='') { return `<div class="field ${extra}"><label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${esc(value)}" ${type==='email'&&name.endsWith('_to')?'multiple':''} ${type==='number'?'inputmode="numeric"':''}>${hint?`<span class="hint">${hint}</span>`:''}</div>`; }
 function check(name,label,description,checked) { return `<label class="checkbox-row"><input type="checkbox" name="${name}" ${checked?'checked':''}><span>${label}${description?`<small>${description}</small>`:''}</span></label>`; }
@@ -223,7 +273,10 @@ async function startTask(kind,payload={}) {
 function updateTask() {
   const job=state.jobs.find(j=>['queued','running'].includes(j.status));
   $('#task').innerHTML=job?`<div class="task-card"><p><span class="spinner"></span>${esc(job.message)}</p><div class="task-track"><span style="width:${Math.max(4,job.progress)}%"></span></div></div>`:'';
-  document.querySelectorAll('[data-action="prepare"]').forEach(b=>b.disabled=Boolean(job));
+  document.querySelectorAll('[data-action="prepare"],[data-action="fetch-source"]').forEach(button=>{
+    const paused=button.dataset.action==='fetch-source'&&!state.sources.find(source=>source.id===button.dataset.id)?.enabled;
+    button.disabled=Boolean(job)||paused;
+  });
 }
 async function poll() {
   try {
@@ -254,10 +307,14 @@ async function saveSettingsForm(form,quiet=false) {
   if(!quiet) {toast('Your preferences are saved.');await refresh();}
 }
 document.addEventListener('submit',async event=>{
-  const form=event.target;if(!['source-form','settings-form','delivery-form','setup-form'].includes(form.id)) return;
+  const form=event.target;if(!['source-form','settings-form','delivery-form','setup-form','feed-connection-form'].includes(form.id)) return;
   event.preventDefault();const button=$('[type="submit"]',form);if(button) button.disabled=true;
   try {
-    if(['settings-form','delivery-form'].includes(form.id)) await saveSettingsForm(form);
+    if(form.id==='feed-connection-form') {
+      const result=await api('/sources','POST',{kind:form.dataset.connectionId});
+      dialog.close();connectionsTab='yours';await refresh();toast(result.message);
+    }
+    else if(['settings-form','delivery-form'].includes(form.id)) await saveSettingsForm(form);
     else if(form.id==='setup-form') {
       const values=readForm(form), credentials={};if(values.api_key) credentials[values.provider+'_key']=values.api_key;
       await api('/settings','POST',{settings:{provider:values.provider,model:values.provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,onboarding_done:true},credentials});
@@ -266,7 +323,7 @@ document.addEventListener('submit',async event=>{
       const values=readForm(form);
       if(sourceKind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
       const body=sourceKind==='raindrop'?{kind:sourceKind,collection_id:Number(values.collection_id),title:values.collection_name||$('#source-collection option:checked')?.textContent||'Saved articles',tags:values.tags.split(',').map(t=>t.trim()).filter(Boolean)}:{kind:sourceKind,url:values.url};
-      const result=await api('/sources','POST',body);dialog.close();
+      const result=await api('/sources','POST',body);dialog.close();connectionsTab='yours';
       if(result.job_id) activeJob=result.job_id;else toast(result.message);
       await refresh();updateTask();
     }
@@ -287,6 +344,11 @@ document.addEventListener('click',async event=>{
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
     if(a==='close-modal') dialog.close();
+    else if(a==='connections-tab') {connectionsTab=target.dataset.value;render();$('#connections-'+connectionsTab+'-tab')?.focus({preventScroll:true});}
+    else if(a==='connection-setup') connectionSetup(id);
+    else if(a==='manage-connection') {connectionsTab='yours';render();document.querySelector('.connection-group[data-connection-id="'+id+'"]')?.scrollIntoView({block:'nearest'});}
+    else if(a==='add-article') showSourceModal('article');
+    else if(a==='fetch-source') {await startTask('prepare',{source_id:id});updateTask();}
     else if(a==='prepare') {if(!state.sources.some(s=>s.enabled)) {navigation('sources');showSourceModal();}else await startTask('prepare');}
     else if(a==='add-source') showSourceModal();
     else if(a==='connect-raindrop') showSourceModal('raindrop');
@@ -344,6 +406,9 @@ document.addEventListener('change',async event=>{
   }
 });
 document.addEventListener('keydown',event=>{
+  if(event.target.matches('[role="tab"][data-action="connections-tab"]')&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
+    event.preventDefault();connectionsTab=event.key==='Home'?'yours':event.key==='End'?'browse':connectionsTab==='yours'?'browse':'yours';render();$('#connections-'+connectionsTab+'-tab')?.focus();
+  }
   if(event.key==='Enter'&&event.target.matches('[role="button"][data-action]')) event.target.click();
   if(event.key==='Escape'&&currentItem&&!dialog.open) $('[data-action="reader-back"]')?.click();
   if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();navigation('library');setTimeout(()=>$('#search')?.focus(),150);}

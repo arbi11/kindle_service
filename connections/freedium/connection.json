@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Daily Edition · arbi11",
+  "id": "freedium",
+  "name": "Freedium",
+  "adapter": "rss",
+  "description": "Read articles from Freedium’s public Recently Unlocked feed. No account needed.",
+  "homepage": "https://freedium-mirror.cfd/",
+  "icon": "rss",
+  "permissions": [
+    "Read the public feed and article pages on freedium-mirror.cfd.",
+    "No account credentials are required."
+  ],
+  "setup": "feed",
+  "feed_url": "https://freedium-mirror.cfd/rss",
+  "domains": [
+    "freedium-mirror.cfd"
+  ]
+}

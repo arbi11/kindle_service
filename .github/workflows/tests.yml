@@ -41,3 +41,5 @@ jobs:
         run: python -m pip install -r requirements-test.txt
       - name: Run offline tests
         run: python -B -m unittest discover -s tests -v
+      - name: Validate reviewed connection catalogue
+        run: python -m connection_sdk

@@ -1,0 +1,20 @@
+{
+  "api_version": 1,
+  "connections": [
+    {
+      "id": "youtube",
+      "manifest": "youtube/connection.json",
+      "sha256": "95a7b674189b12512fd700c9856e6cdaa93254736fe63a4c1be485da0fe318b3"
+    },
+    {
+      "id": "raindrop",
+      "manifest": "raindrop/connection.json",
+      "sha256": "49e99441de541585f68ff8b0489d151deed1c65a728294594f70ae977cff6067"
+    },
+    {
+      "id": "freedium",
+      "manifest": "freedium/connection.json",
+      "sha256": "a558250f817921cfdddcdc3466390067cc70a4727352c9e657e78e7ee353fd78"
+    }
+  ]
+}

@@ -110,6 +110,7 @@ class Application:
                     slots.append(slot)
         legacy = (Path.home() / ".config/raindrop-kindle/config.toml").exists()
         return {"version": __version__, "settings": settings, "secrets": self.secrets.status(),
+                "catalogue": self.engine.catalogue.public(sources),
                 "sources": sources, "editions": editions, "stats": stats,
                 "jobs": self.store.query("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 8"),
                 "deliveries": self.store.query("SELECT d.*,e.title AS edition_title FROM deliveries d LEFT JOIN editions e ON e.id=d.edition_id ORDER BY d.created_at DESC LIMIT 30"),
@@ -210,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
             path = parsed.path
             if path == "/api/bootstrap":
                 self.json(self.app.bootstrap())
+            elif path == "/api/connections":
+                self.json({"connections": self.app.engine.catalogue.public(self.app.store.sources())})
             elif path == "/api/items":
                 self.json({"items": self.app.store.items(params.get("q", [""])[0], params.get("kind", ["all"])[0], params.get("status", ["all"])[0])})
             elif re.fullmatch(r"/api/items/[\w-]+", path):
@@ -301,6 +304,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({"job_id": job_id})
             elif path == "/api/sources" and method == "POST":
                 kind = data.get("kind")
+                connection = self.app.engine.catalogue.get(kind)
                 if kind == "youtube":
                     self.json({"job_id": self.app.engine.submit("add_youtube", data)})
                 elif kind == "raindrop":
@@ -319,6 +323,11 @@ class Handler(BaseHTTPRequestHandler):
                     if parsed.scheme not in ("http", "https") or not parsed.hostname or len(url) > 2000:
                         raise ValueError("Enter a full article URL starting with https://")
                     self.json({"id": store.add_source(kind, parsed.hostname.removeprefix("www."), url), "message": "Article added. Prepare an edition to read it."})
+                elif connection.definition["adapter"] == "rss":
+                    definition = connection.definition
+                    source_id = store.add_source(kind, definition["name"] + " · Recently Unlocked" if kind == "freedium" else definition["name"],
+                                                 definition["feed_url"], {"connection_version": definition["version"]})
+                    self.json({"id": source_id, "message": definition["name"] + " connected"})
                 else:
                     raise ValueError("Choose a source type")
             elif re.fullmatch(r"/api/sources/[\w-]+", path):

@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Daily Edition · arbi11",
+  "id": "youtube",
+  "name": "YouTube",
+  "adapter": "youtube",
+  "description": "Turn new videos from channels you follow into readable summaries.",
+  "homepage": "https://www.youtube.com/",
+  "icon": "video",
+  "permissions": [
+    "Read the channels you add and their public video captions.",
+    "Optional audio transcription uses the setting you choose in the app."
+  ],
+  "setup": "youtube"
+}

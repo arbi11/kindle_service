@@ -1,0 +1,15 @@
+{
+  "id": "example-reading",
+  "name": "Example Reading",
+  "version": "1.0.0",
+  "api_version": 1,
+  "adapter": "rss",
+  "description": "Articles from an example public feed.",
+  "maintainer": "Your name or GitHub handle",
+  "homepage": "https://example.org/",
+  "icon": "rss",
+  "permissions": ["Read this public feed and its linked articles."],
+  "setup": "feed",
+  "feed_url": "https://example.org/feed.xml",
+  "domains": ["example.org"]
+}

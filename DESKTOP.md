@@ -1,14 +1,38 @@
 # Daily Edition desktop
 
-Daily Edition is a free proprietary desktop reader. This 0.1.0 build runs on
+Daily Edition is a free proprietary desktop reader. This 0.2.0 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
+## Community connections: agreed direction
+
+The platform supports community-contributed feed connections while the core app
+remains proprietary. Contributors submit new connections and code updates through
+GitHub pull requests. Review is required before a connection or new version is
+listed in the catalogue. Review can later be delegated to trusted maintainers.
+
+**Manage connections** has Your connections and Browse connections tabs. Browse
+lists reviewed versions, descriptions and maintainers. Connect opens service setup
+and displays access information for public feeds. Connected services and services
+with saved reading appear in the left panel. Sources can be fetched, paused,
+resumed or disconnected; disconnection retains their collected reading.
+
+Freedium supplies its public Recently Unlocked feed without an account. Fetch
+articles collects full article text and uses the app's existing summary settings.
+It does not automatically redirect Raindrop links. Feed dates are unlock dates,
+not necessarily the original article publication dates.
+
+The first catalogue ships with the app and works offline. Public feed connections
+are JSON definitions with bounded HTTPS access and an exact hash/version in the
+reviewed index. Custom executable adapters require reviewed app code and a release.
+See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
+to validate the catalogue. The core app's copyright terms are unchanged.
+
 ## Readers Digest design preview
 
-The `desktop-redesign` branch contains the agreed three-column layout:
+The app contains the agreed three-column layout:
 
-- **Connections** on the left: All articles, YouTube, and Raindrop. A connection
+- **Connections** on the left: All articles and your reading services. A connection
   filters the middle feed; All articles restores the combined feed.
 - **Readers Digest** in the middle, with the date, a compact article list, and
   Most recent ordering. Selecting an article opens a preview beneath its title.
@@ -17,11 +41,11 @@ The `desktop-redesign` branch contains the agreed three-column layout:
   status, routine link, and quote on the right.
 
 Most relevant appears as an inactive sort option. Its ranking rules must be
-discussed before implementation. Other configuration screens and Library are
-retained from v0.1 and have not been redesigned in this step.
+discussed before implementation. Configuration screens and Library retain their
+existing functions.
 
 On the development laptop, open **Daily Edition Preview** from the applications
-menu or run `~/.local/bin/daily-edition-preview`. This uses a separate sample
+menu or run `~/.local/bin/daily-edition-preview`. This uses a separate preview
 library with scheduling disabled. The installed v0.1 app is still **Daily Edition**.
 
 To run the preview from a prepared development checkout:
@@ -29,8 +53,6 @@ To run the preview from a prepared development checkout:
 ```sh
 .desktop-venv/bin/python daily_edition.py --data-dir artifacts/redesign-preview --no-keyring --no-scheduler
 ```
-
-The instructions below describe the v0.1 setup and delivery flows.
 
 ## Install the packaged app
 
@@ -45,17 +67,19 @@ this release.
 
 ## First reading
 
-1. Open Daily Edition. The clearly labelled sample edition lets you try the reader.
-2. Choose **Make it yours** and optionally add your AI key and reading interests.
-3. In **Sources**, add YouTube channel URLs or @handles, Raindrop collections, or
-   individual article URLs. Raindrop uses a personal token created in its own
-   integrations settings. Check connection loads your available collections.
-4. Choose **Prepare edition**. New reading is collected, summarized when applicable,
+1. Open Daily Edition. Clearly labelled sample articles let you try the reader.
+2. In **Settings**, optionally add your AI key and reading interests.
+3. Open **Manage connections → Browse connections** and choose YouTube, Raindrop
+   or Freedium. Add channel URLs or @handles for YouTube; Raindrop uses a personal
+   token and selected collections. Freedium needs no account. Your connections
+   also retains Add an article by URL.
+4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library
+   to check all enabled sources. Reading is collected, summarized when applicable,
    and saved locally. Your reading budget and per-run cap keep editions manageable.
-5. Open a piece to read. Use the summary/full article or transcript tabs, text-size
-   controls, theme button, bookmark button, and **Mark as read**. Preferences and
-   reading state survive app restarts. The `/` shortcut opens library search;
-   Escape returns from the reader.
+5. Select an article for an inline preview and Expand for the full reader. Use the
+   summary/full article or transcript tabs, text-size controls, theme button,
+   bookmark button, and **Mark as read**. Preferences and reading state survive
+   app restarts. The `/` shortcut opens library search; Escape returns from the reader.
 
 If this laptop already has the original Kindle services, **Import existing setup**
 copies source subscriptions, credentials, known delivery identifiers and up to eight
@@ -128,5 +152,12 @@ the local library, transcripts, credentials or test artifacts. It replaces Ebook
 with a ZIP/XML EPUB writer. License notices are included in the release; review
 third-party distribution obligations before a wider public release.
 
-All application changes for this release are local to the desktop-app branch.
-No product source has been published from that branch.
+The earlier `desktop-app` and `desktop-redesign` branches preserve the v0.1 and
+approved reading-layout checkpoints. Connection development is on `community-connections`.
+
+
+For the connection-specific browser checks, run an isolated fixture server with
+`python tests/connection_ui_server.py --data-dir /temporary/connection-ui`, then
+`node tests/connections_ui.cjs /temporary/connection-ui/runtime.json`. It tests
+catalogue setup, fetching, pause/resume, disconnection, filters and EPUB export
+using synthetic service responses. It blocks real mail and external network.

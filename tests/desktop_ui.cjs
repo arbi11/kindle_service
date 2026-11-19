@@ -79,11 +79,11 @@ with sqlite3.connect(sys.argv[1]) as db:
     await page.getByRole('heading',{name:'A little space for something good.'}).waitFor();
     await page.getByRole('textbox',{name:'Search your library'}).fill('');
     await page.waitForFunction(()=>document.querySelectorAll('.reading-card').length===3);await shot('03-library');
-    await nav('Manage connections');await click('add-source');
+    await nav('Manage connections');await click('add-article');
     await page.locator('[data-action="source-tab"][data-value="article"]').click();
     await page.getByLabel('Article URL',{exact:true}).fill(fixtureUrl);
     await page.getByRole('button',{name:'Add article',exact:true}).click();
-    await page.locator('.source-card').waitFor();assert.equal(await page.locator('.source-card').count(),1);
+    await page.locator('.connected-source').waitFor();assert.equal(await page.locator('.connected-source').count(),1);
     await click('toggle-source');await page.waitForFunction(()=>document.querySelector('[role="switch"]').getAttribute('aria-checked')==='false');
     await click('toggle-source');await page.waitForFunction(()=>document.querySelector('[role="switch"]').getAttribute('aria-checked')==='true');
     await shot('04-sources');
@@ -92,9 +92,7 @@ with sqlite3.connect(sys.argv[1]) as db:
     await nav('All articles');
     await page.waitForFunction(()=>document.querySelectorAll('.digest-article').length===1);
     assert.match(await page.locator('.digest-title').innerText(),/A useful local reading test/);await shot('05-prepared');
-    await nav('Raindrop');
-    await page.getByRole('heading',{name:'No articles here yet',exact:true}).waitFor();
-    await nav('All articles');
+    assert.equal(await page.locator('.connection-nav [data-connection="raindrop"]').count(),0);
     await click('preview');await click('read');await page.locator('.prose').waitFor();
     assert.match(await page.locator('.prose').innerText(),/\$3 million/);
     assert.match(await page.locator('.prose').innerText(),/\$2 million/);

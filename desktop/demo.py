@@ -32,5 +32,5 @@ def seed(store):
         body = paragraphs_html(paragraphs)
         ids.append(store.add_item(kind=kind, external_id=f"sample-{i}", title=title, author=author,
                                  body_html=body, summary_html=body if kind == "video" else "",
-                                 takeaway=takeaway, is_sample=True))
+                                 takeaway=takeaway, is_sample=True, connection_id="youtube" if kind == "video" else "raindrop"))
     store.make_edition("A little less scrolling. A little more reading.", ids, is_sample=True)

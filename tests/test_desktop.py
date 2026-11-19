@@ -311,6 +311,33 @@ class HTTPTests(unittest.TestCase):
                 self.assertTrue(response.read())
         self.assertEqual(len(self.app.store.items()), 3)
 
+    def test_reviewed_catalogue_and_feed_setup_are_authenticated_and_idempotent(self):
+        with self.assertRaises(HTTPError) as denied:
+            self.request("/api/connections", auth=False)
+        self.assertEqual(denied.exception.code, 401)
+        denied.exception.close()
+        with self.request("/api/connections") as response:
+            catalogue = json.load(response)["connections"]
+        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium"])
+        self.assertTrue(all(connection["reviewed"] for connection in catalogue))
+        first = None
+        for _ in range(2):
+            with self.request("/api/sources", "POST", {"kind": "freedium", "url": "https://unreviewed.example/feed"}) as response:
+                created = json.load(response)["id"]
+            if first is not None:
+                self.assertEqual(created, first)
+            first = created
+        self.assertEqual(len(self.app.store.sources()), 1)
+        self.assertEqual(self.app.store.sources()[0]["url"], "https://freedium-mirror.cfd/rss")
+        with self.request("/api/bootstrap") as response:
+            catalogue = json.load(response)["catalogue"]
+        self.assertEqual(next(connection for connection in catalogue if connection["id"] == "freedium")["source_count"], 1)
+        for kind in ("unreviewed", {"entrypoint": "unsafe.py"}):
+            with self.subTest(kind=kind), self.assertRaises(HTTPError) as denied:
+                self.request("/api/sources", "POST", {"kind": kind})
+            self.assertEqual(denied.exception.code, 400)
+            denied.exception.close()
+
 
 if __name__ == "__main__":
     unittest.main()
