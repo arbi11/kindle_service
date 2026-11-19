@@ -1,6 +1,6 @@
 # Daily Edition desktop
 
-Daily Edition is a free proprietary desktop reader. This 0.2.1 build runs on
+Daily Edition is a free proprietary desktop reader. This 0.2.2 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -90,6 +90,30 @@ recent books. It never edits the original configuration or timers. Imported edit
 are labelled imported. Automatic preparation and sending remain paused in the app.
 Pause the original timers yourself before enabling equivalent app deliveries, so
 the two independent services do not deliver overlapping future content.
+
+For a **one-time reading-only archive import**, close the desktop reader and run:
+
+```sh
+.desktop-venv/bin/python import_reading_archive.py --data-dir ~/.local/share/daily-edition-preview --dry-run
+.desktop-venv/bin/python import_reading_archive.py --data-dir ~/.local/share/daily-edition-preview
+```
+
+This separate utility reads retained sent books and delivery metadata from
+`~/.local/state/raindrop-kindle` and `~/.local/state/youtube-kindle`. It backs up the
+reader database, copies the original EPUBs into the reader's `reading-archive`
+folder, and imports distinct stories with their connection, attribution and dates.
+YouTube edition overviews are excluded from the story list; retained takeaways are
+kept with their video. Missing saved summary text is labelled explicitly. Books
+older than the services' capped delivery logs are retained as archive copies;
+recent files absent from delivery history are excluded. Repeating the import
+preserves reading state and bookmarks and does not duplicate imported editions.
+
+The utility copies no credentials, settings or subscriptions, makes no AI or mail
+calls, and installs no synchronization or watcher. After the import, the reader
+works from its own copies and generates future reading through its own configured
+connections. The original services continue their existing Kindle deliveries.
+The reading list loads additional local pages so histories larger than 200 or 500
+stories remain accessible.
 
 ## Email and Kindle delivery
 

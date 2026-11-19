@@ -70,9 +70,16 @@ const latestEdition = () => state.editions.find(e => !e.is_sample) || state.edit
 
 async function refresh(renderPage=true) {
   const epoch=++refreshEpoch;
-  const [data, library] = await Promise.all([api('/bootstrap'), api('/items?' + new URLSearchParams(filters))]);
+  const query = {...filters, limit:200};
+  const [data, library] = await Promise.all([api('/bootstrap'), api('/items?' + new URLSearchParams(query))]);
+  const allItems = library.items;
+  let page = library;
+  while(page.has_more && epoch===refreshEpoch) {
+    page = await api('/items?' + new URLSearchParams({...query, offset:page.next_offset}));
+    allItems.push(...page.items);
+  }
   if(epoch!==refreshEpoch) return;
-  state = data; items = library.items;
+  state = data; items = [...new Map(allItems.map(item=>[item.id,item])).values()];
   if (renderPage) render();
 }
 function navigation(next) {

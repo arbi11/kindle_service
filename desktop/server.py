@@ -214,7 +214,11 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/connections":
                 self.json({"connections": self.app.engine.catalogue.public(self.app.store.sources())})
             elif path == "/api/items":
-                self.json({"items": self.app.store.items(params.get("q", [""])[0], params.get("kind", ["all"])[0], params.get("status", ["all"])[0])})
+                limit = max(1, min(int(params.get("limit", ["200"])[0]), 500))
+                offset = max(0, min(int(params.get("offset", ["0"])[0]), 2**31 - 1))
+                items = self.app.store.items(params.get("q", [""])[0], params.get("kind", ["all"])[0],
+                                             params.get("status", ["all"])[0], limit=limit, offset=offset)
+                self.json({"items": items, "has_more": len(items) == limit, "next_offset": offset + len(items)})
             elif re.fullmatch(r"/api/items/[\w-]+", path):
                 item = self.app.store.query("SELECT * FROM items WHERE id=?", (path.rsplit("/", 1)[1],), one=True)
                 if not item:

@@ -157,7 +157,7 @@ class Engine:
             if attempted >= remaining or getattr(self, "_attempts_left", remaining) <= 0:
                 break
             external_id = bookmark.external_id
-            if self.store.known("article", external_id):
+            if self.store.known("article", external_id, source["kind"], bookmark.url):
                 continue
             attempted += 1
             self._attempts_left = getattr(self, "_attempts_left", remaining) - 1

@@ -296,6 +296,32 @@ class HTTPTests(unittest.TestCase):
         with self.request("/api/editions/" + edition["id"] + "/html") as response:
             self.assertIn(b"DAILY EDITION", response.read())
 
+    def test_library_pagination_reaches_reading_beyond_both_200_and_500_items(self):
+        with self.app.store.connect() as db:
+            db.executemany("""INSERT INTO items(id,kind,external_id,title,published,created_at,connection_id)
+                           VALUES(?,'article',?,?,'2026-11-19T12:00:00+00:00','2026-11-19T12:00:00+00:00','raindrop')""",
+                           [(f"archive-{n:04}", f"old-{n}", f"Archived story {n}") for n in range(507)])
+        seen, offset = [], 0
+        while True:
+            with self.request(f"/api/items?limit=200&offset={offset}") as response:
+                page = json.load(response)
+            seen.extend(item["id"] for item in page["items"])
+            self.assertEqual(page["next_offset"], len(seen))
+            if not page["has_more"]:
+                break
+            offset = page["next_offset"]
+        self.assertEqual(len(seen), 507)
+        self.assertEqual(len(set(seen)), 507)
+        self.assertEqual(seen, sorted(seen))
+        with self.request("/api/items?q=Archived%20story%20506&limit=200") as response:
+            page = json.load(response)
+        self.assertEqual([item["id"] for item in page["items"]], ["archive-0506"])
+        self.assertFalse(page["has_more"])
+        with self.assertRaises(HTTPError) as error:
+            self.request("/api/items?offset=not-a-number")
+        self.assertEqual(error.exception.code, 400)
+        error.exception.close()
+
     def test_enabling_schedule_waits_for_the_next_slot(self):
         with self.request("/api/settings", "POST", {"settings": {"schedule_enabled": True}}):
             pass

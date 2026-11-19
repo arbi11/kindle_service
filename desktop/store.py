@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlite3
 import threading
 import uuid
+from urllib.parse import urldefrag
 
 
 DEFAULTS = {
@@ -142,8 +143,13 @@ class Store:
                      (source_id, kind, title, url, json.dumps(detail or {}), now()))
         return self.query("SELECT id FROM sources WHERE kind=? AND url=?", (kind, url), one=True)["id"]
 
-    def known(self, kind, external_id):
-        return bool(self.query("SELECT 1 FROM items WHERE kind=? AND external_id=? UNION ALL SELECT 1 FROM seen WHERE kind=? AND external_id=? LIMIT 1", (kind, external_id, kind, external_id), one=True))
+    def known(self, kind, external_id, connection_id="", url=""):
+        if self.query("SELECT 1 FROM items WHERE kind=? AND external_id=? UNION ALL SELECT 1 FROM seen WHERE kind=? AND external_id=? LIMIT 1", (kind, external_id, kind, external_id), one=True):
+            return True
+        # Imported bookmarks may predate retained bookmark IDs. Their source URL
+        # still identifies reading already in this connection's library.
+        return bool(connection_id and url and self.query("SELECT 1 FROM items WHERE kind=? AND connection_id=? AND url=? LIMIT 1",
+                    (kind, connection_id, urldefrag(url)[0]), one=True))
 
     def add_item(self, *, kind, external_id, title, url="", author="", published=None,
                  body_html="", summary_html="", takeaway="", source_id=None, is_sample=False, connection_id=""):
@@ -159,7 +165,7 @@ class Store:
                       body_html, summary_html, takeaway, words, int(is_sample), now(), connection_id))
         return self.query("SELECT id FROM items WHERE kind=? AND external_id=?", (kind, external_id), one=True)["id"]
 
-    def items(self, search="", kind="all", status="all", limit=200):
+    def items(self, search="", kind="all", status="all", limit=200, offset=0):
         clauses, params = [], []
         if search:
             clauses.append("(title LIKE ? OR author LIKE ? OR takeaway LIKE ?)")
@@ -175,7 +181,8 @@ class Store:
         if real:
             clauses.append("is_sample=0")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        return self.query("SELECT * FROM items" + where + " ORDER BY published DESC LIMIT ?", (*params, min(limit, 500)))
+        return self.query("SELECT * FROM items" + where + " ORDER BY published DESC,created_at DESC,id LIMIT ? OFFSET ?",
+                          (*params, max(1, min(int(limit), 500)), max(0, min(int(offset), 2**31 - 1))))
 
     def editions(self):
         return self.query("""SELECT e.*,(SELECT COUNT(*) FROM edition_items ei WHERE ei.edition_id=e.id) AS item_count,
