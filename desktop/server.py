@@ -311,6 +311,8 @@ class Handler(BaseHTTPRequestHandler):
                 connection = self.app.engine.catalogue.get(kind)
                 if kind == "youtube":
                     self.json({"job_id": self.app.engine.submit("add_youtube", data)})
+                elif kind in ("substack", "websites"):
+                    self.json({"job_id": self.app.engine.submit("add_subscription", data)})
                 elif kind == "raindrop":
                     if not self.app.secrets.get("raindrop_token"):
                         raise ValueError("Connect your Raindrop account first")

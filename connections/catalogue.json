@@ -15,6 +15,16 @@
       "id": "freedium",
       "manifest": "freedium/connection.json",
       "sha256": "45fa797cbf8f33eb97b7a8a4778a61646455ed3d5cfbfe788a175aec2dbbffc2"
+    },
+    {
+      "id": "substack",
+      "manifest": "substack/connection.json",
+      "sha256": "0d6b1105065c646ae2b35b80f9193a381f797c6dde419a4f7339712117440661"
+    },
+    {
+      "id": "websites",
+      "manifest": "websites/connection.json",
+      "sha256": "4e92204043318ff7f72851825552917a626ddd68d6a04a913f07427b7c404e6a"
     }
   ]
 }

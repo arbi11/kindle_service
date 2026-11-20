@@ -166,11 +166,13 @@ function restoreConnectionDraft() {
   const rail = $('.connection-rail');
   if (rail) rail.scrollTop = connectionRailScroll;
 }
+const sourceNoun = kind => ({youtube:'channel',raindrop:'collection',substack:'publication',websites:'site'}[kind] || 'source');
+const followLabel = kind => kind==='article' ? 'Add article' : 'Follow '+sourceNoun(kind);
 function connectionPanel(connection) {
   const sources = state.sources.filter(source => source.kind === connection.id);
   const active = sources.filter(source => source.enabled).length;
   const open = expandedConnection === connection.id;
-  const status = !sources.length ? 'Not connected' : !active ? 'Paused' : connection.setup==='feed' ? 'Connected' : `${active} ${connection.id==='youtube'?(active===1?'channel':'channels'):(active===1?'collection':'collections')}`;
+  const status = !sources.length ? 'Not connected' : !active ? 'Paused' : connection.setup==='feed' ? 'Connected' : `${active} ${sourceNoun(connection.id)}${active===1?'':'s'}`;
   return `<section class="rail-connection" data-rail-connection="${esc(connection.id)}">
     <h3><button id="connection-toggle-${esc(connection.id)}" class="connection-toggle" data-action="expand-connection" data-id="${esc(connection.id)}" aria-label="${esc(connection.name)} settings" aria-expanded="${open}" aria-controls="connection-options-${esc(connection.id)}">${icon(connection.icon)}<span><strong>${esc(connection.name)}</strong><small>${esc(status)}</small></span>${icon('chevron')}</button></h3>
     <div id="connection-options-${esc(connection.id)}" class="connection-options" role="region" aria-labelledby="connection-toggle-${esc(connection.id)}" ${open?'':'hidden'}>${open?`
@@ -178,9 +180,9 @@ function connectionPanel(connection) {
       ${sources.length?`<div class="rail-source-list">${sources.map(sourceRow).join('')}</div>`:''}
       ${connection.setup==='feed'?(sources.length?'':`<form id="rail-feed-form" data-connection-id="${esc(connection.id)}"><p class="hint">No account needed. Fetch articles when you are ready.</p><button class="btn secondary small" type="submit">Connect ${esc(connection.name)}</button><div class="form-feedback" role="status"></div></form>`):`
         <form id="rail-source-form" data-connection-id="${esc(connection.id)}" data-source-kind="${esc(connection.id)}">
-          ${sources.length?`<h4>${connection.id==='youtube'?'Add a channel':'Add a collection'}</h4>`:''}
+          ${sources.length?`<h4>Add a ${sourceNoun(connection.id)}</h4>`:''}
           ${sourceFields(connection.id,'rail')}
-          <button class="btn secondary small" type="submit">${connection.id==='youtube'?'Follow channel':'Follow collection'}</button><div class="form-feedback" role="status"></div>
+          <button class="btn secondary small" type="submit">${followLabel(connection.id)}</button><div class="form-feedback" role="status"></div>
         </form>`}
     `:''}</div>
   </section>`;
@@ -228,7 +230,7 @@ function connectedGroup(connection) {
   const sources = state.sources.filter(source => source.kind === connection.id);
   return `<article class="connection-group" data-connection-id="${esc(connection.id)}">
     <header class="connection-group-header"><div class="connection-identity">${icon(connection.icon)}<div><h2>${esc(connection.name)}</h2><p>${sources.length} ${sources.length===1?'source':'sources'} · ${sources.filter(s=>s.enabled).length} active</p></div></div>
-      <div class="inline-actions"><button class="text-btn" data-connection="${esc(connection.id)}">Read articles ${icon('arrow')}</button>${connection.setup!=='feed'?`<button class="btn secondary small" data-action="connection-setup" data-id="${esc(connection.id)}">${icon('plus')} ${connection.id==='youtube'?'Add channel':'Add collection'}</button>`:''}</div>
+      <div class="inline-actions"><button class="text-btn" data-connection="${esc(connection.id)}">Read articles ${icon('arrow')}</button>${connection.setup!=='feed'?`<button class="btn secondary small" data-action="connection-setup" data-id="${esc(connection.id)}">${icon('plus')} Add ${sourceNoun(connection.id)}</button>`:''}</div>
     </header>${sources.map(sourceRow).join('')}
   </article>`;
 }
@@ -237,7 +239,7 @@ function catalogueCard(connection) {
     <div class="catalogue-card-title"><span class="catalogue-icon">${icon(connection.icon)}</span><h2>${esc(connection.name)}</h2><span class="review-label">${icon('check')} Reviewed</span></div>
     <p class="catalogue-description">${esc(connection.description)}</p>
     <p class="catalogue-maintainer">Maintained by ${esc(connection.maintainer)}</p>
-    <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.setup==='feed'?'No account needed':connection.id==='youtube'?'Add a channel':'Connect your account'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
+    <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.id==='raindrop'?'Connect your account':'No account needed'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
   </article>`;
 }
 function sourcesPage() {
@@ -294,6 +296,8 @@ function modal(content, eyebrow='QUIB27') {
 }
 function sourceFields(kind,prefix='source') {
   if(kind==='youtube') return `<div class="field"><label for="${prefix}-url">Channel URL or @handle</label><input id="${prefix}-url" name="url" placeholder="@YourFavouriteChannel" required><span class="hint">Follow recent uploads from this channel.</span></div>`;
+  if(kind==='substack') return `<div class="field"><label for="${prefix}-url">Publication address</label><input id="${prefix}-url" name="url" placeholder="https://your-publication.substack.com" required><span class="hint">A publication’s own custom domain also works. Public posts only; no account or email signup needed.</span></div>`;
+  if(kind==='websites') return `<div class="field"><label for="${prefix}-url">Website or feed address</label><input id="${prefix}-url" name="url" placeholder="https://your-favourite-blog.com" required><span class="hint">We look for an RSS or Atom feed. You can also paste the feed address directly.</span></div>`;
   if(kind==='article') return `<div class="field"><label for="${prefix}-url">Article URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://example.com/a-good-read" required><span class="hint">Publicly accessible articles work best. Sign-in and paywalls may prevent extraction.</span></div>`;
   return `${credential('raindrop_token','Raindrop token','Paste your personal test token',`Get a token from <a href="https://app.raindrop.io/settings/integrations" target="_blank" rel="noopener noreferrer">Raindrop’s integrations settings ↗</a>. It stays on this device.`,prefix)}
     <button class="text-btn check-raindrop" type="button" data-action="test-raindrop">${icon('check')} Check connection & load collections</button>
@@ -302,8 +306,8 @@ function sourceFields(kind,prefix='source') {
     ${field('tags','Filter by tags (optional)','','text','Comma-separated tags. A bookmark can match any one.','',prefix)}`;
 }
 function showSourceModal(kind='youtube') {
-  const types=[['youtube','video','YouTube'],['raindrop','cloud','Raindrop'],['article','article','Article']];
-  modal(`<h2 id="modal-title">A few good sources.</h2><p class="description">Choose what you want to keep up with. You can pause or remove a source at any time.</p><div class="source-tabs">${types.map(([id,i,label])=>`<button data-action="source-tab" data-value="${id}" class="${id===kind?'active':''}">${icon(i)}${label}</button>`).join('')}</div><form id="source-form" data-source-kind="${kind}">${sourceFields(kind)}<div id="modal-feedback" class="form-feedback" role="status"></div><button class="btn full" type="submit">${icon('plus')} ${kind==='youtube'?'Follow channel':kind==='raindrop'?'Follow collection':'Add article'}</button></form>`,'FOLLOW WHAT MATTERS');
+  const types=[...(state.catalogue || []).filter(c=>c.setup!=='feed').map(c=>[c.id,c.icon,c.name]),['article','article','Article']];
+  modal(`<h2 id="modal-title">A few good sources.</h2><p class="description">Choose what you want to keep up with. You can pause or remove a source at any time.</p><div class="source-tabs">${types.map(([id,i,label])=>`<button data-action="source-tab" data-value="${id}" class="${id===kind?'active':''}">${icon(i)}${label}</button>`).join('')}</div><form id="source-form" data-source-kind="${kind}">${sourceFields(kind)}<div id="modal-feedback" class="form-feedback" role="status"></div><button class="btn full" type="submit">${icon('plus')} ${followLabel(kind)}</button></form>`,'FOLLOW WHAT MATTERS');
 }
 function setupModal() {
   modal(`<h2 id="modal-title">Make room for your kind of reading.</h2><p class="description">Start with your AI key and a few interests. Then choose your sources. You can read saved articles without an AI key, too.</p><form id="setup-form"><div class="field"><label for="setup-provider">AI provider</label><select id="setup-provider" name="provider"><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></div><div class="field"><label for="setup-key">API key (optional for articles)</label><input id="setup-key" name="api_key" type="password" autocomplete="new-password" placeholder="Your own provider key"><span class="hint">AI usage is billed directly by your provider.</span></div><div class="field"><label for="setup-interests">What do you enjoy reading about?</label><textarea id="setup-interests" name="interests" placeholder="A few topics, in your own words…">${esc(state.settings.interests)}</textarea></div><div id="modal-feedback"></div><button class="btn full" type="submit">Choose your sources ${icon('arrow')}</button></form>${state.legacy_available?'<div style="text-align:center;margin-top:20px"><button class="text-btn" data-action="import">Or import your existing laptop setup</button></div>':''}`,'A LITTLE MORE YOU');
@@ -344,7 +348,7 @@ async function poll() {
         });
       }
     }
-    if(finished.some(j=>['prepare','add_youtube','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open) await refreshConnections();
+    if(finished.some(j=>['prepare','add_youtube','add_subscription','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open) await refreshConnections();
   } catch(e) { /* An app shutdown or a brief local interruption should not erase the reader. */ }
 }
 function readForm(form) { const values={}; for(const element of form.elements) if(element.name) values[element.name]=element.type==='checkbox'?element.checked:element.type==='number'?Number(element.value):element.value; return values; }

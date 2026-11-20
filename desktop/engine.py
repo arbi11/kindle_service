@@ -24,6 +24,7 @@ import youtube_kindle as yt
 from .content import sanitize, plain_text, paragraphs_html, render_newsletter
 from .store import now, uid
 from .connections import Catalogue, Feed
+from .feeds import Subscription, resolve_subscription
 
 log = logging.getLogger("daily-edition")
 
@@ -55,7 +56,7 @@ class Engine:
                 "transcribe": {"openai_model": "gpt-transcribe", "cloud_max_minutes_per_video": s["audio_minutes_per_video"]}}
 
     def submit(self, kind, payload=None):
-        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "import_legacy", "import_epub"}
+        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "add_subscription", "import_legacy", "import_epub"}
         if kind not in allowed:
             raise ValueError("Unknown task")
         with self.store.lock:
@@ -98,6 +99,16 @@ class Engine:
                 {"role": "user", "content": "Reply with the single word Ready."}], "max_tokens": 1200,
                 "reasoning_effort": "low"})
         return {"message": f"Connected. {s['model']} is ready to summarize."}
+
+    def job_add_subscription(self, job_id, payload):
+        kind = payload.get("kind")
+        if kind not in ("substack", "websites"):
+            raise ValueError("Choose Substack or Websites & blogs")
+        self.store.progress(job_id, "Finding the publication’s feed…", 25)
+        source = resolve_subscription(payload.get("url", ""), kind)
+        source["detail"]["connection_version"] = self.catalogue.get(kind).definition["version"]
+        source_id = self.store.add_source(kind, source["title"], source["url"], source["detail"])
+        return {"message": "Following " + source["title"], "source_id": source_id}
 
     def job_test_raindrop(self, job_id, payload):
         if not self.secrets.get("raindrop_token"):
@@ -164,7 +175,11 @@ class Engine:
             try:
                 self.store.progress(job_id, "Reading " + (bookmark.title or bookmark.url)[:90] + "…", 30)
                 article = rk.Article(1, {"_id": external_id, "link": bookmark.url}, bookmark.title, bookmark.url)
-                rk.fetch_article(transport, article, False, rk.ImageBudget(0))
+                if isinstance(connection, Subscription):
+                    for key, value in connection.read_article(bookmark).items():
+                        setattr(article, key, value)
+                else:
+                    rk.fetch_article(transport, article, False, rk.ImageBudget(0))
                 if not article.body_html or len(plain_text(article.body_html)) < 80:
                     raise ValueError("The full article could not be extracted. It may require sign-in or block automated reading.")
                 body = sanitize(article.body_html)

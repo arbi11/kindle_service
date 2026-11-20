@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.4 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.5 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -21,6 +21,21 @@ Freedium supplies its public Recently Unlocked feed without an account. Fetch
 articles collects full article text and uses the app's existing summary settings.
 It does not automatically redirect Raindrop links. Feed dates are unlock dates,
 not necessarily the original article publication dates.
+
+Substack and Websites & blogs follow individual publications chosen by the reader.
+Paste a Substack publication address (custom domains work), a website address, or
+a direct RSS/Atom URL. Setup discovers the feed in a background task. Subscriptions
+can be fetched, paused, resumed or disconnected in the right Connections panel.
+The first fetch includes up to three latest public posts, subject to the existing
+per-run cap, even if the publication has not posted inside the lookback window.
+Later fetches follow that window and skip reading already in the library.
+
+Publisher-supplied article content is preferred; shorter feeds use webpage
+extraction. Explicit paid previews are skipped, and account-only content is not
+supported. Feed and page HTML is sanitized before storage. User-selected feeds use
+bounded HTTPS requests with redirect checks and public DNS addresses pinned for
+each TLS connection. They cannot read the laptop's private network or provider keys.
+There is no Substack account signup or subscription charge.
 
 The first catalogue ships with the app and works offline. Public feed connections
 are JSON definitions with bounded HTTPS access and an exact hash/version in the
@@ -73,9 +88,11 @@ this release.
 
 1. Open Quib27. Clearly labelled sample articles let you try the reader.
 2. In **Settings**, optionally add your AI key and reading interests.
-3. Select YouTube, Raindrop or Freedium in the right-hand **Connections** panel.
+3. Select a connection in the right-hand **Connections** panel.
    Add channel URLs or @handles for YouTube; Raindrop uses a personal token and
-   selected collections. Freedium needs no account. **Sources → Browse connections**
+   selected collections. Substack takes a publication address; Websites & blogs
+   accepts a site or feed address. These feeds and Freedium need no account.
+   **Sources → Browse connections**
    also shows the reviewed catalogue; Your connections retains Add an article by URL.
 4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library
    to check all enabled sources. Reading is collected, summarized when applicable,
@@ -195,3 +212,7 @@ using synthetic service responses. It blocks real mail and external network.
 With another fresh fixture profile, `node tests/panels_ui.cjs /temporary/panel-ui/runtime.json`
 checks the three-panel layout, inline connection setup, credential checks, story
 filters, keyboard controls, and preservation of unsaved forms during connection jobs.
+
+`tests/subscriptions_ui.cjs` uses a fresh instance of the same fixture server to
+check custom-domain Substack setup, website feed discovery, RSS/Atom full text,
+sanitization, duplicate fetching, pause/resume and retained reading after disconnect.

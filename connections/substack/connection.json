@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Quib27 · arbi11",
+  "id": "substack",
+  "name": "Substack",
+  "adapter": "substack",
+  "description": "Follow the publications you choose. Paste a Substack publication address, including custom domains. Public posts only; no account needed.",
+  "homepage": "https://substack.com/",
+  "icon": "book",
+  "permissions": [
+    "Read public publication pages, feeds and their article links.",
+    "No Substack login, email signup or paid subscription is created.",
+    "Local and private network addresses are blocked."
+  ],
+  "setup": "substack"
+}

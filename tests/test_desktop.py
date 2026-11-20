@@ -344,7 +344,7 @@ class HTTPTests(unittest.TestCase):
         denied.exception.close()
         with self.request("/api/connections") as response:
             catalogue = json.load(response)["connections"]
-        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium"])
+        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium", "substack", "websites"])
         self.assertTrue(all(connection["reviewed"] for connection in catalogue))
         first = None
         for _ in range(2):

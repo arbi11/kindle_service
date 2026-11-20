@@ -15,6 +15,7 @@ import requests
 from desktop.server import Application
 from desktop.store import now
 from test_connections import LINK, article, response, rss
+from test_subscriptions import BLOG_SITE, SUBSTACK_SITE, publication_request
 
 
 def main():
@@ -31,6 +32,8 @@ def main():
             return response(url, rss())
         if url == LINK or host == "reading.example":
             return response(url, article())
+        if url.startswith((BLOG_SITE, SUBSTACK_SITE)):
+            return publication_request(method, url, **kwargs)
         if host == "api.raindrop.io":
             if path.endswith("/collections"):
                 value = {"items": [{"_id": 3, "title": "Science"}]}

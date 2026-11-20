@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import re
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 API_VERSION = 1
@@ -78,9 +78,10 @@ def validate_manifest(data: dict) -> dict:
     for field, length in (("name", 80), ("description", 500), ("maintainer", 100)):
         if not isinstance(data[field], str) or not data[field].strip() or len(data[field]) > length:
             raise ValueError(f"Invalid connection {field}")
-    if data["adapter"] not in ("youtube", "raindrop", "rss"):
+    builtins = ("youtube", "raindrop", "substack", "websites")
+    if data["adapter"] not in (*builtins, "rss"):
         raise ValueError("This adapter is not supported")
-    if data["adapter"] in ("youtube", "raindrop") and data["adapter"] != data["id"]:
+    if data["adapter"] in builtins and data["adapter"] != data["id"]:
         raise ValueError("Built-in adapters cannot be assigned to another connection")
     if data["icon"] not in ("video", "cloud", "article", "book", "rss"):
         raise ValueError("Choose a supported connection icon")
@@ -90,7 +91,7 @@ def validate_manifest(data: dict) -> dict:
     if not isinstance(data["permissions"], list) or not 1 <= len(data["permissions"]) <= 8 or any(
             not isinstance(item, str) or not item.strip() or len(item) > 200 for item in data["permissions"]):
         raise ValueError("Describe the connection's access")
-    if data["setup"] not in ("youtube", "raindrop", "feed"):
+    if data["setup"] not in (*builtins, "feed"):
         raise ValueError("Unsupported connection setup")
     if data["adapter"] == "rss":
         domains = data.get("domains")
@@ -137,7 +138,8 @@ def load_catalogue(folder: Path) -> dict[str, dict]:
     return result
 
 
-def parse_feed(payload: bytes, domains: list[str], *, fallback_date: str) -> list[Candidate]:
+def parse_feed(payload: bytes, domains: list[str], *, fallback_date: str, include_content=False,
+               default_author="", base_url="") -> list[Candidate]:
     """Read bounded RSS 2.0 or Atom. Ignore entries outside the declared hosts."""
     declarations = payload.replace(b"\x00", b"").upper()
     if len(payload) > MAX_FEED_BYTES or b"<!DOCTYPE" in declarations or b"<!ENTITY" in declarations:
@@ -160,13 +162,34 @@ def parse_feed(payload: bytes, domains: list[str], *, fallback_date: str) -> lis
             title = "".join(entry.find("{*}title").itertext()).strip() if entry.find("{*}title") is not None else ""
             published = entry.findtext("{*}published") or entry.findtext("{*}updated") or ""
             author = entry.findtext("{*}author/{*}name") or ""
+            content = entry.find("{*}content")
+            if content is not None and content.get("type") == "xhtml":
+                from copy import deepcopy
+                children = [deepcopy(child) for child in content]
+                for child in children:
+                    for node in child.iter():
+                        node.tag = node.tag.split("}")[-1]
+                body = "".join(ET.tostring(child, encoding="unicode") for child in children)
+            elif content is not None and content.get("type", "text") == "text":
+                from html import escape
+                body = "<p>" + escape(content.text or "") + "</p>"
+            else:
+                body = (content.text or "") if content is not None else ""
         else:
             url = (entry.findtext("link") or "").strip()
             title = (entry.findtext("title") or "").strip()
             published = entry.findtext("pubDate") or entry.findtext("{*}date") or ""
             author = entry.findtext("author") or entry.findtext("{*}creator") or ""
+            body = entry.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or ""
+        if base_url:
+            url = urljoin(base_url, url)
+            parsed = urlparse(url)
+            if parsed.scheme == "http":
+                url = urlunparse(parsed._replace(scheme="https"))
         if not title or not allowed_url(url, domains) or url in seen:
             continue
         seen.add(url)
-        result.append(Candidate(url, title[:1000], url, iso_date(published, fallback_date), author[:300]))
+        detail = {"feed_html": body} if include_content and body else None
+        result.append(Candidate(url, title[:1000], url, iso_date(published, fallback_date),
+                                (author or default_author)[:300], detail=detail))
     return result

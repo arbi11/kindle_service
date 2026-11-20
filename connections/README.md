@@ -2,7 +2,7 @@
 
 The app owns reading, AI summaries, storage, scheduling, newsletters and EPUB
 delivery. Connections supply content candidates through connection API version 1.
-YouTube, Raindrop and Freedium use that same discovery interface.
+YouTube, Raindrop, Substack, Websites & blogs and Freedium use that same discovery interface.
 
 The first catalogue is bundled with the app and works offline. Only manifest
 versions listed and hash-pinned in `catalogue.json` are loaded. An unlisted file,
@@ -53,6 +53,21 @@ publication date. Availability and the latest feed entries depend on Freedium.
 
 This version does not automatically redirect Raindrop links through Freedium.
 Reading content for personal use does not transfer its author's ownership.
+
+## User-selected publications
+
+Substack and Websites & blogs are reviewed built-in adapters. They discover RSS
+or Atom from a reader-selected public address and keep each subscription as its
+own source. These are not arbitrary-domain permissions for declarative community
+feed manifests: those still require explicit reviewed domains and a fixed feed URL.
+
+The public transport blocks local/private DNS answers, pins the checked address
+while retaining TLS hostname verification, and bounds response bytes and redirects.
+Publisher content is sanitized and can be read without an AI key. RSS descriptions
+and Atom summaries are treated as previews and use article extraction; full
+content:encoded or Atom content can be read directly. Explicit paid previews are
+not represented as complete articles. Community contributors can propose more
+adapters through the existing GitHub review process.
 
 ## Review and releases
 

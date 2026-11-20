@@ -9,6 +9,7 @@ import raindrop_kindle as rk
 import youtube_kindle as yt
 from connection_sdk import Candidate, MAX_DOCUMENT_BYTES, MAX_FEED_BYTES, allowed_url, iso_date, load_catalogue, parse_feed
 from .store import now
+from .feeds import Subscription
 
 CATALOGUE = Path(__file__).resolve().parent.parent / "connections"
 
@@ -91,7 +92,8 @@ class DirectArticle:
 class Catalogue:
     def __init__(self, folder=CATALOGUE):
         self.definitions = load_catalogue(Path(folder))
-        adapters = {"youtube": YouTube, "raindrop": Raindrop, "rss": Feed}
+        adapters = {"youtube": YouTube, "raindrop": Raindrop, "rss": Feed,
+                    "substack": Subscription, "websites": Subscription}
         self.connections = {key: adapters[value["adapter"]](value) for key, value in self.definitions.items()}
         self.connections["article"] = DirectArticle()
 

@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Quib27 · arbi11",
+  "id": "websites",
+  "name": "Websites & blogs",
+  "adapter": "websites",
+  "description": "Follow a website or blog through its RSS or Atom feed. Paste the site address or a direct feed URL. No account needed.",
+  "homepage": "https://www.rssboard.org/rss-specification",
+  "icon": "rss",
+  "permissions": [
+    "Find a feed on the public website you select and read its article links.",
+    "No publisher account credentials are used.",
+    "Local and private network addresses are blocked."
+  ],
+  "setup": "websites"
+}

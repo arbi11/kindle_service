@@ -35,7 +35,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.goto(`http://127.0.0.1:${runtime.port}/?session=${runtime.token}`);
     await page.getByRole('heading',{name:'The Daily Quib',exact:true}).waitFor();
     assert.deepEqual(await page.locator('.primary-nav button').evaluateAll(buttons=>buttons.map(b=>b.getAttribute('aria-label'))),['Today','Library','Sources','Delivery','Settings']);
-    assert.equal(await rail.locator('.connection-toggle').count(),3);
+    assert.equal(await rail.locator('.connection-toggle').count(),5);
     assert.equal(await rail.locator('.connection-toggle[aria-expanded="true"]').count(),0);
     assert.equal(await page.locator('.rail-card,.quote-card').count(),0);
     await shot('01-reading-room');

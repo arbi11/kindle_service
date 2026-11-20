@@ -4,8 +4,9 @@ The **Quib27 desktop app** adds a local reading library, source setup,
 AI preferences, and email/Kindle delivery controls. See [desktop installation and
 usage](DESKTOP.md). The original command-line services are documented below.
 
-Desktop v0.2 adds **Your connections / Browse connections**, a reviewed connection
-catalogue, and Freedium's public reading feed alongside YouTube and Raindrop.
+Desktop v0.2.5 adds **Substack** and **Websites & blogs** subscriptions alongside
+YouTube, Raindrop and Freedium, with **Your connections / Browse connections**
+and a reviewed connection catalogue. Public articles can be read without an AI key.
 See [community connection development](connections/README.md) to contribute a
 feed connection through GitHub review.
 
