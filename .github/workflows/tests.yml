@@ -22,6 +22,17 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-test.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+      - name: Test Pi reading agent
+        working-directory: agent
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+          npm run build
       - name: Install FFmpeg
         timeout-minutes: 4
         run: |

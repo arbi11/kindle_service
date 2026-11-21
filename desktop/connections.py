@@ -11,6 +11,7 @@ from connection_sdk import Candidate, MAX_DOCUMENT_BYTES, MAX_FEED_BYTES, allowe
 from .store import now
 from .feeds import Subscription
 from .medium import Medium
+from .publications import Publications
 
 CATALOGUE = Path(__file__).resolve().parent.parent / "connections"
 
@@ -94,7 +95,7 @@ class Catalogue:
     def __init__(self, folder=CATALOGUE):
         self.definitions = load_catalogue(Path(folder))
         adapters = {"youtube": YouTube, "raindrop": Raindrop, "rss": Feed,
-                    "substack": Subscription, "websites": Subscription, "medium": Medium}
+                    "substack": Subscription, "websites": Subscription, "medium": Medium, "publications": Publications}
         self.connections = {key: adapters[value["adapter"]](value) for key, value in self.definitions.items()}
         self.connections["article"] = DirectArticle()
 

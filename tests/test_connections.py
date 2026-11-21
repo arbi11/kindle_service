@@ -54,7 +54,7 @@ class CatalogueTests(unittest.TestCase):
             folder = Path(temporary) / "connections"
             shutil.copytree(CATALOGUE, folder)
             (folder / "unreviewed.py").write_text("raise RuntimeError('must never run')")
-            self.assertEqual(set(load_catalogue(folder)), {"youtube", "raindrop", "freedium", "substack", "websites", "medium"})
+            self.assertEqual(set(load_catalogue(folder)), {"youtube", "raindrop", "freedium", "substack", "websites", "medium", "publications"})
             path = folder / "freedium/connection.json"
             path.write_text(path.read_text().replace("Recently Unlocked", "Changed without a new hash"))
             with self.assertRaisesRegex(ValueError, "reviewed version"):

@@ -25,7 +25,10 @@ from .content import sanitize, plain_text, paragraphs_html, render_newsletter
 from .store import now, uid
 from .connections import Catalogue, Feed
 from .feeds import Subscription, resolve_subscription
-from .medium import article_address, creator_list, fetch_freedium, resolve_creator, saved_article
+from .medium import freedium_address, creator_list, fetch_freedium, resolve_creator, saved_article
+from .publications import Publications, select_articles
+from .publication_browser import PublicationBrowser
+from .agent import PiSelection
 
 log = logging.getLogger("daily-edition")
 
@@ -34,6 +37,7 @@ class Engine:
     def __init__(self, store, secrets):
         self.store, self.secrets = store, secrets
         self.catalogue = Catalogue()
+        self.catalogue.get("publications").browser = PublicationBrowser(store.root)
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="edition-worker")
         self.task_lock = threading.Lock()
         self.schedule_lock = threading.Lock()
@@ -57,7 +61,7 @@ class Engine:
                 "transcribe": {"openai_model": "gpt-transcribe", "cloud_max_minutes_per_video": s["audio_minutes_per_video"]}}
 
     def submit(self, kind, payload=None):
-        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "add_subscription", "import_freedium", "import_legacy", "import_epub"}
+        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "add_subscription", "import_freedium", "login_publication", "import_legacy", "import_epub"}
         if kind not in allowed:
             raise ValueError("Unknown task")
         with self.store.lock:
@@ -129,10 +133,14 @@ class Engine:
         return {"message": "Following " + source["title"], "source_id": source_id}
 
     def job_import_freedium(self, job_id, payload):
-        address = article_address(payload.get("url", ""))
-        existing = saved_article(self.store, address["url"])
+        address = freedium_address(payload.get("url", ""))
+        existing = self.store.query("SELECT id FROM items WHERE kind='article' AND (external_id=? OR url=?) LIMIT 1",
+                                    (address["external_id"], address["url"]), one=True)
+        if not existing and address["external_id"].startswith("medium:"):
+            older = saved_article(self.store, address["url"])
+            existing = {"id": older} if older else None
         if existing:
-            return {"message": "This article is already in your library.", "item_id": existing}
+            return {"message": "This article is already in your library.", "item_id": existing["id"]}
         self.store.progress(job_id, "Getting the article from Freedium…", 25)
         article = fetch_freedium(address["url"])
         summary, takeaway = "", ""
@@ -142,11 +150,27 @@ class Engine:
             with rk.http() as session:
                 takeaway, summary = self.summarize_article(session, article["title"], plain_text(article["body_html"]))
         item_id = self.store.add_item(kind="article", external_id=address["external_id"], connection_id="freedium",
-                                      title=article["title"], url=article["url"], author=article["author"] or "Medium author",
+                                      title=article["title"], url=article["url"], author=article["author"] or urlparse(article["url"]).hostname,
                                       published=article["published"], body_html=article["body_html"],
                                       content_source=article["content_source"], content_url=article["content_url"],
                                       takeaway=takeaway, summary_html=sanitize(summary))
         return {"message": "Article saved. You can read it in Quib27 now.", "item_id": item_id, "added": 1}
+
+    def job_login_publication(self, job_id, payload):
+        source = next((s for s in self.store.sources() if s["id"] == payload.get("source_id") and s["kind"] == "publications"), None)
+        if not source:
+            raise ValueError("Choose a saved publication")
+        self.store.progress(job_id, "Sign in in the publication browser, then click Finish sign-in…", 20)
+        login_url = source["url"]
+        host = urlparse(login_url).hostname
+        for prefix in ("feeds.", "rss.", "feed."):
+            if host.startswith(prefix):
+                login_url = "https://" + host[len(prefix):] + "/"
+                break
+        self.catalogue.get("publications").browser.request(source["id"], login_url, login=True)
+        detail = {**source["detail"], "session_saved_at": now()}
+        self.store.execute("UPDATE sources SET detail=? WHERE id=?", (json.dumps(detail), source["id"]))
+        return {"message": "Browser session saved. Fetch articles to check subscriber access."}
 
     def job_test_raindrop(self, job_id, payload):
         if not self.secrets.get("raindrop_token"):
@@ -199,7 +223,17 @@ class Engine:
         s = self.store.settings()
         connection = self.catalogue.get(source["kind"])
         token = self.secrets.get("raindrop_token") if connection.definition["adapter"] == "raindrop" else ""
+        if isinstance(connection, Publications) and source["detail"].get("preferences") and not self.secrets.get(s["provider"] + "_key"):
+            raise ValueError("Add an AI API key in Settings to select articles using your written preferences, or leave preferences blank to fetch recent articles.")
         bookmarks = connection.discover(session, source, since, token=token)
+        if isinstance(connection, Publications):
+            unseen = [item for item in bookmarks if not self.store.known("article", item.external_id, source["kind"], item.url)
+                      and not self.store.query("SELECT 1 FROM items WHERE kind='article' AND url=? LIMIT 1", (item.url,), one=True)]
+            self.store.progress(job_id, "Choosing articles for " + source["title"] + "…", 25)
+            def choose(payload):
+                return PiSelection().select(payload, provider=s["provider"], model=s["model"], key=self.secrets.get(s["provider"] + "_key"))
+            bookmarks = select_articles(unseen, source["detail"].get("preferences", ""),
+                                        min(remaining, source["detail"].get("max_articles", 5)), choose)
         transport = connection.http(session) if isinstance(connection, Feed) else session
         added, errors, attempted = 0, [], 0
         for bookmark in bookmarks:
@@ -229,9 +263,10 @@ class Engine:
                     takeaway, summary = self.summarize_article(session, article.title, plain_text(body))
                 self.store.add_item(kind="article", external_id=external_id, title=article.title or bookmark.url,
                                     url=article.url, author=bookmark.author or article.author or article.site or urlparse(article.url).hostname or "Article",
-                                    published=bookmark.published or now(), body_html=body,
+                                    published=(getattr(article, "published", "") if isinstance(connection, Publications) else "") or bookmark.published or now(), body_html=body,
                                     summary_html=sanitize(summary), takeaway=takeaway, source_id=source["id"],
-                                    content_source=getattr(article, "content_source", ""), content_url=getattr(article, "content_url", ""))
+                                    content_source=getattr(article, "content_source", ""), content_url=getattr(article, "content_url", ""),
+                                    selection_reason=(bookmark.detail or {}).get("selection_reason", ""))
                 added += 1
             except Exception as exc:
                 errors.append((bookmark.title or bookmark.url)[:90] + ": " + self.secrets.redact(exc))

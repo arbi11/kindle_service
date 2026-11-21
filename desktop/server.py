@@ -19,7 +19,8 @@ from . import __version__
 from .content import render_newsletter
 from .demo import seed
 from .engine import Engine
-from .medium import article_address
+from .medium import freedium_address
+from .publications import publication_values
 from .knowledge import load as load_knowledge, graph as knowledge_graph, PILOT_FILE
 from .secrets import Secrets, NAMES
 from .store import DEFAULTS, Store, now, private_write, uid
@@ -323,6 +324,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.json({"job_id": self.app.engine.submit("add_youtube", data)})
                 elif kind in ("substack", "websites", "medium"):
                     self.json({"job_id": self.app.engine.submit("add_subscription", data)})
+                elif kind == "publications":
+                    values = publication_values(data)
+                    values["detail"]["connection_version"] = connection.definition["version"]
+                    source_id = store.add_source(kind, values["title"], values["url"], values["detail"])
+                    self.json({"id": source_id, "message": "Publication added. Sign in if needed, then fetch articles."})
                 elif kind == "raindrop":
                     if not self.app.secrets.get("raindrop_token"):
                         raise ValueError("Connect your Raindrop account first")
@@ -347,14 +353,34 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise ValueError("Choose a source type")
             elif path == "/api/freedium/import" and method == "POST":
-                address = article_address(data.get("url", ""))
+                address = freedium_address(data.get("url", ""))
                 self.json({"job_id": self.app.engine.submit("import_freedium", {"url": address["url"]})})
+            elif re.fullmatch(r"/api/publications/[a-f0-9]{32}/login", path) and method == "POST":
+                source_id = path.split("/")[3]
+                if not store.query("SELECT 1 FROM sources WHERE id=? AND kind='publications'", (source_id,), one=True):
+                    raise ValueError("Choose a saved publication")
+                self.json({"job_id": self.app.engine.submit("login_publication", {"source_id": source_id})})
             elif re.fullmatch(r"/api/sources/[\w-]+", path):
                 source_id = path.rsplit("/", 1)[1]
+                source = next((s for s in store.sources() if s["id"] == source_id), None)
+                if not source:
+                    raise ValueError("This source could not be found")
                 if method == "DELETE":
+                    if source["kind"] == "publications":
+                        if store.query("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1", one=True):
+                            raise ValueError("Let the current task finish before removing a publication")
+                        import shutil
+                        shutil.rmtree(store.root / "publication-browser/profiles" / source_id, ignore_errors=True)
                     store.execute("DELETE FROM sources WHERE id=?", (source_id,))
                 elif method == "PATCH" and isinstance(data.get("enabled"), bool):
                     store.execute("UPDATE sources SET enabled=? WHERE id=?", (int(data["enabled"]), source_id))
+                elif method == "PATCH" and source["kind"] == "publications":
+                    values = publication_values(data)
+                    if urlparse(values["url"]).hostname != urlparse(source["url"]).hostname:
+                        raise ValueError("Add a separate publication to connect a different website")
+                    detail = {**source["detail"], **values["detail"]}
+                    store.execute("UPDATE sources SET title=?,url=?,detail=? WHERE id=?",
+                                  (values["title"], values["url"], json.dumps(detail), source_id))
                 else:
                     raise ValueError("Invalid source update")
                 self.json({"message": "Source updated"})

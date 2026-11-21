@@ -1,0 +1,19 @@
+{
+  "name": "quib27-publication-agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "esbuild selection.mjs --bundle --platform=node --target=node22 --format=esm --splitting --outdir=dist --out-extension:.js=.mjs --entry-names=reader-agent --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "test": "node --test selection.test.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.0"
+  }
+}

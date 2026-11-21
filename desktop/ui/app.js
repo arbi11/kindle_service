@@ -168,11 +168,13 @@ function captureConnectionDraft() {
 }
 function restoreConnectionDraft() {
   const form = $('#rail-source-form'), values = form && connectionDrafts.get(form.dataset.connectionId);
-  if (values) for (const element of form.elements) if (element.name in values) element.value = values[element.name];
+  if (values) for (const element of form.elements) if (element.name in values) {
+    if(element.type==='checkbox') element.checked=values[element.name];else element.value=values[element.name];
+  }
   const rail = $('.connection-rail');
   if (rail) rail.scrollTop = connectionRailScroll;
 }
-const sourceNoun = kind => ({youtube:'channel',raindrop:'collection',substack:'publication',websites:'site',medium:'creator'}[kind] || 'source');
+const sourceNoun = kind => ({youtube:'channel',raindrop:'collection',substack:'publication',websites:'site',medium:'creator',publications:'publication'}[kind] || 'source');
 const followLabel = kind => kind==='freedium'?'Import article':kind==='medium'?'Follow creators':kind==='article' ? 'Add article' : 'Follow '+sourceNoun(kind);
 function freediumForm(prefix='rail') {
   return `<form id="${prefix==='rail'?'rail-source-form':'source-form'}" data-connection-id="freedium" data-source-kind="freedium">${sourceFields('freedium',prefix)}<button class="btn secondary small" type="submit">Import article</button><div class="form-feedback" role="status"></div></form>`;
@@ -283,8 +285,9 @@ function knowledgeInsight(insight,scoped) {
 }
 function sourceRow(source) {
   return `<div class="connected-source" data-source-id="${esc(source.id)}">
-    <div class="connected-source-info"><strong>${esc(source.title)}</strong><p>${source.item_count} ${source.item_count===1?'article':'articles'} · ${source.checked_at?'Checked '+shortDate(source.checked_at):'Not fetched yet'}${!source.enabled?' · Paused':''}</p>${source.error?`<p class="source-error">${esc(source.error)}</p>`:''}</div>
+    <div class="connected-source-info"><strong>${esc(source.title)}</strong><p>${source.item_count} ${source.item_count===1?'article':'articles'} · ${source.checked_at?'Checked '+shortDate(source.checked_at):'Not fetched yet'}${!source.enabled?' · Paused':''}</p>${source.kind==='publications'?`<p>${source.detail.preferences?esc(source.detail.preferences):'Recent articles · no preference filter'} · Up to ${source.detail.max_articles||5} per fetch</p><p>${source.detail.session_saved_at?'Session saved '+shortDate(source.detail.session_saved_at):'No saved login session'}</p>`:''}${source.error?`<p class="source-error">${esc(source.error)}</p>`:''}</div>
     <div class="connected-source-actions">
+      ${source.kind==='publications'?`<button class="text-btn" data-action="publication-login" data-id="${esc(source.id)}">Sign in / reconnect</button><button class="text-btn" data-action="publication-edit" data-id="${esc(source.id)}">Preferences</button>`:''}
       <button class="text-btn" data-action="fetch-source" data-id="${esc(source.id)}" ${source.enabled?'':'disabled'} aria-label="Fetch articles from ${esc(source.title)}">${icon('refresh')} Fetch articles</button>
       <button class="toggle ${source.enabled?'on':''}" role="switch" aria-checked="${Boolean(source.enabled)}" aria-label="${source.enabled?'Pause':'Resume'} ${esc(source.title)}" data-action="toggle-source" data-id="${esc(source.id)}"></button>
       <button class="icon-btn" data-action="remove-source" data-id="${esc(source.id)}" aria-label="Disconnect ${esc(source.title)}">${icon('trash')}</button>
@@ -304,7 +307,7 @@ function catalogueCard(connection) {
     <div class="catalogue-card-title"><span class="catalogue-icon">${icon(connection.icon)}</span><h2>${esc(connection.name)}</h2><span class="review-label">${icon('check')} Reviewed</span></div>
     <p class="catalogue-description">${esc(connection.description)}</p>
     <p class="catalogue-maintainer">Maintained by ${esc(connection.maintainer)}</p>
-    <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.id==='raindrop'?'Connect your account':'No account needed'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
+    <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.id==='raindrop'?'Connect your account':connection.id==='publications'?'Local subscriber login':'No account needed'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
   </article>`;
 }
 function sourcesPage() {
@@ -327,7 +330,7 @@ function connectionSetup(id) {
   const connection = state.catalogue.find(c => c.id===id);
   if (!connection) return;
   if(id==='freedium') {
-    modal(`<h2 id="modal-title">Read a Medium article</h2><p class="description">Paste its Medium or Freedium link. The article is fetched from Freedium and saved in your Quib27 library for reading here.</p>${freediumForm('source')}<p class="mini muted">Freedium is a third-party service and receives the article URL. Availability depends on that service.</p>`,'FREEDIUM');
+    modal(`<h2 id="modal-title">Read an article</h2><p class="description">Paste its original article or Freedium link. The article is fetched from Freedium and saved in your Quib27 library for reading here.</p>${freediumForm('source')}<p class="mini muted">Freedium is a third-party service and receives the article URL. Availability depends on that service.</p>`,'FREEDIUM');
     return;
   }
   if (connection.setup!=='feed') {showSourceModal(connection.id);return;}
@@ -365,7 +368,7 @@ function renderReader() {
   captureConnectionDraft();
   const item=currentItem, queue=readerCitation?[]:currentEdition?currentEdition.items:view==='knowledge'?KnowledgeGraph.readingQueue():view==='today'?digestItems():connectionItems();
   const position=queue.findIndex(i=>i.id===item.id), next=position>=0?queue[position+1]:null;
-  $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand" title="Quib27"><img class="brand-mark" src="/icon.svg" width="26" height="26" alt="">Quib27</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.content_source==='freedium'?'<span>Text via Freedium</span>':item.content_source==='medium'?'<span>Text from Medium</span>':''}${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
+  $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand" title="Quib27"><img class="brand-mark" src="/icon.svg" width="26" height="26" alt="">Quib27</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.content_source==='freedium'?'<span>Text via Freedium</span>':item.content_source==='medium'?'<span>Text from Medium</span>':item.content_source==='subscriber'?'<span>Text via your subscriber session</span>':''}${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.selection_reason?`<p class="reader-selection">Selected for you: ${esc(item.selection_reason)}</p>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
   decorateCitedPassage();
   if(lastView==='knowledge') $('[data-action="reader-back"]').setAttribute('aria-label','Back to knowledge graph');
 }
@@ -387,11 +390,12 @@ function modal(content, eyebrow='QUIB27') {
   if (!dialog.open) dialog.showModal();
 }
 function sourceFields(kind,prefix='source') {
+  if(kind==='publications') return `${field('title','Name (optional)','','text','','',prefix)}<div class="field"><label for="${prefix}-url">Website, section or feed URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://your-publication.com/business" required><span class="hint">Choose a page that lists the articles you want to follow.</span></div><div class="field"><label for="${prefix}-preferences">What would you like to read?</label><textarea id="${prefix}-preferences" name="preferences" maxlength="3000" rows="3" placeholder="Economic policy and long-term investing. Skip daily stock tips."></textarea><span class="hint">Written preferences use your AI connection. Leave blank to collect recent articles without AI selection.</span></div>${field('max_articles','Articles per fetch',5,'number','1–10, within your overall preparation limit.','',prefix)}${check('freedium_fallback','Try Freedium if needed','Sends unreadable article URLs to Freedium. Availability varies.',true)}<p class="hint">After adding, use Sign in / reconnect if subscriber access is needed. The browser session stays on this laptop.</p>`;
   if(kind==='youtube') return `<div class="field"><label for="${prefix}-url">Channel URL or @handle</label><input id="${prefix}-url" name="url" placeholder="@YourFavouriteChannel" required><span class="hint">Follow recent uploads from this channel.</span></div>`;
   if(kind==='substack') return `<div class="field"><label for="${prefix}-url">Publication address</label><input id="${prefix}-url" name="url" placeholder="https://your-publication.substack.com" required><span class="hint">A publication’s own custom domain also works. Public posts only; no account or email signup needed.</span></div>`;
   if(kind==='websites') return `<div class="field"><label for="${prefix}-url">Website or feed address</label><input id="${prefix}-url" name="url" placeholder="https://your-favourite-blog.com" required><span class="hint">We look for an RSS or Atom feed. You can also paste the feed address directly.</span></div>`;
   if(kind==='medium') return `<div class="field"><label for="${prefix}-url">Creators to follow</label><textarea class="medium-creators" id="${prefix}-url" name="url" rows="3" maxlength="12000" placeholder="@creator\nhttps://medium.com/@another-creator" required></textarea><span class="hint">One @handle or Medium profile link per line, up to 20 at a time. New posts are collected when you fetch articles or your reading schedule runs.</span><span class="hint">Excerpts use Freedium automatically. Article URLs are sent to that service. No Medium login is needed.</span></div>`;
-  if(kind==='freedium') return `<div class="field"><label for="${prefix}-url">Medium article URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://medium.com/@creator/story-0123456789ab" required><span class="hint">A Freedium link also works. Save the article here and read it offline, without opening the website.</span></div>`;
+  if(kind==='freedium') return `<div class="field"><label for="${prefix}-url">Article URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://publication.com/article" required><span class="hint">Original publication and Freedium links are accepted. Availability depends on Freedium; complete articles are saved for offline reading.</span></div>`;
   if(kind==='article') return `<div class="field"><label for="${prefix}-url">Article URL</label><input id="${prefix}-url" name="url" type="url" placeholder="https://example.com/a-good-read" required><span class="hint">Publicly accessible articles work best. Sign-in and paywalls may prevent extraction.</span></div>`;
   return `${credential('raindrop_token','Raindrop token','Paste your personal test token',`Get a token from <a href="https://app.raindrop.io/settings/integrations" target="_blank" rel="noopener noreferrer">Raindrop’s integrations settings ↗</a>. It stays on this device.`,prefix)}
     <button class="text-btn check-raindrop" type="button" data-action="test-raindrop">${icon('check')} Check connection & load collections</button>
@@ -442,7 +446,7 @@ async function poll() {
         });
       }
     }
-    if(finished.some(j=>['prepare','add_youtube','add_subscription','import_freedium','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open) await refreshConnections();
+    if(finished.some(j=>['prepare','add_youtube','add_subscription','import_freedium','login_publication','import_legacy','import_epub','send'].includes(j.kind))&&!currentItem&&!dialog.open) await refreshConnections();
   } catch(e) { /* An app shutdown or a brief local interruption should not erase the reader. */ }
 }
 function readForm(form) { const values={}; for(const element of form.elements) if(element.name) values[element.name]=element.type==='checkbox'?element.checked:element.type==='number'?Number(element.value):element.value; return values; }
@@ -474,7 +478,8 @@ document.addEventListener('submit',async event=>{
       const values=readForm(form), kind=form.dataset.sourceKind;
       if(kind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
       const body=kind==='raindrop'?{kind,collection_id:Number(values.collection_id),title:values.collection_name||$('select[name="collection_id"] option:checked',form)?.textContent||'Saved articles',tags:values.tags.split(',').map(t=>t.trim()).filter(Boolean)}:{kind,url:values.url};
-      const result=await api(kind==='freedium'?'/freedium/import':'/sources','POST',body);dialog.close();connectionsTab='yours';
+      if(kind==='publications') Object.assign(body,{title:values.title,preferences:values.preferences,max_articles:values.max_articles,freedium_fallback:values.freedium_fallback});
+      const result=await api(form.dataset.sourceId?'/sources/'+form.dataset.sourceId:kind==='freedium'?'/freedium/import':'/sources',form.dataset.sourceId?'PATCH':'POST',body);dialog.close();connectionsTab='yours';
       form.reset();connectionDrafts.delete(kind);
       if(result.job_id) activeJob=result.job_id;else toast(result.message);
       await refreshConnections();updateTask();
@@ -515,6 +520,13 @@ document.addEventListener('click',async event=>{
     else if(a==='connection-setup') connectionSetup(id);
     else if(a==='manage-connection') {connectionsTab='yours';render();document.querySelector('.connection-group[data-connection-id="'+id+'"]')?.scrollIntoView({block:'nearest'});}
     else if(a==='add-article') showSourceModal('article');
+    else if(a==='publication-login') {const result=await api('/publications/'+id+'/login','POST',{});activeJob=result.job_id;await refresh(false);updateTask();}
+    else if(a==='publication-edit') {
+      const source=state.sources.find(s=>s.id===id);
+      modal(`<h2 id="modal-title">${esc(source.title)} preferences</h2><form id="source-form" data-source-kind="publications" data-source-id="${id}">${sourceFields('publications','edit-publication')}<button class="btn full" type="submit">Save preferences</button><div class="form-feedback" role="status"></div></form>`);
+      const values={title:source.title,url:source.url,...source.detail};
+      for(const element of $('#source-form').elements) if(element.name in values) {if(element.type==='checkbox') element.checked=values[element.name];else element.value=values[element.name];}
+    }
     else if(a==='fetch-source') {await startTask('prepare',{source_id:id});updateTask();}
     else if(a==='prepare') {if(!state.sources.some(s=>s.enabled)) {navigation('sources');showSourceModal();}else await startTask('prepare');}
     else if(a==='add-source') showSourceModal();

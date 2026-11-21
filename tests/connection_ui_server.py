@@ -17,12 +17,16 @@ from desktop.store import now
 from test_connections import LINK, article, response, rss
 from test_subscriptions import BLOG_SITE, SUBSTACK_SITE, publication_request
 from test_medium import network as medium_request
+from test_medium import mirror_page
+from test_publications import SITE as JOURNAL, STORY, OTHER, index_page, story_page, selection
+from unittest.mock import Mock
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--medium-demo", action="store_true")
+    parser.add_argument("--publications-demo", action="store_true")
     args = parser.parse_args()
     original = requests.sessions.Session.request
 
@@ -32,6 +36,12 @@ def main():
             return original(session, method, url, **kwargs)
         if url == "https://freedium-mirror.cfd/rss":
             return response(url, rss())
+        if url == JOURNAL:
+            return response(url, index_page())
+        if url in (STORY, OTHER):
+            return response(url, story_page(paid=True))
+        if url.startswith("https://freedium-mirror.cfd/https://journal.example/"):
+            return response(url, mirror_page(title="The patient investor", story=STORY))
         if host == "medium.com" or url.startswith("https://freedium-mirror.cfd/https://medium.com/"):
             return medium_request(method, url, **kwargs)
         if url == LINK or host == "reading.example":
@@ -52,13 +62,19 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopped.set())
     with patch("requests.sessions.Session.request", new=fake_request), \
+         patch("desktop.engine.PiSelection.select", return_value=selection([{"id": "0", "reason": "Matches long-term investing and economic policy; excludes daily stock tips."}])), \
          patch("youtube_kindle.resolve_channel", return_value=channel), \
          patch("smtplib.SMTP_SSL", side_effect=AssertionError("Mail disabled in UI tests")), \
          patch("smtplib.SMTP", side_effect=AssertionError("Mail disabled in UI tests")):
         app = Application(args.data_dir, use_keyring=False, scheduler=False)
-        if args.medium_demo:
+        if args.medium_demo or args.publications_demo:
             app.store.save_settings({"onboarding_done": True, "schedule_enabled": False,
                                      "auto_send": False, "summarize_articles": False})
+        if args.publications_demo:
+            app.secrets.set("openai_key", "synthetic-fixture-key-not-a-real-key")
+            browser = Mock()
+            browser.request.return_value = {"ok": True, "html": story_page().decode(), "url": STORY}
+            app.engine.catalogue.get("publications").browser = browser
         try:
             print("Connection UI fixture service ready.", flush=True)
             stopped.wait()

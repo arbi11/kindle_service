@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 import re
-from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+import hashlib
+from urllib.parse import parse_qsl, urlencode, unquote, urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -87,6 +88,29 @@ def saved_article(store, value):
     return None
 
 
+def freedium_address(value):
+    """Accept publication articles as well as the existing Medium URL forms."""
+    address = public_url(value)
+    for _ in range(3):
+        parsed = urlsplit(address)
+        if parsed.hostname not in FREEDIUM_HOSTS:
+            break
+        address = public_url(unquote(parsed.path.lstrip("/")))
+    parsed = urlsplit(address)
+    if parsed.hostname in FREEDIUM_HOSTS or not parsed.path.strip("/"):
+        raise ValueError("Paste the original article URL")
+    try:
+        return article_address(address)
+    except ValueError:
+        if parsed.hostname == "medium.com" or parsed.hostname.endswith(".medium.com"):
+            raise
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+             if not key.lower().startswith("utm_") and key.lower() not in ("fbclid", "gclid")]
+    address = urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), urlencode(query), ""))
+    return {"external_id": "publication:" + hashlib.sha256(address.encode()).hexdigest(),
+            "url": address, "medium_url": address}
+
+
 def medium_entries(payload, feed_url):
     root = feed_root(payload)
     channel = root.find("channel")
@@ -140,7 +164,7 @@ def clean_body(body, base):
 def fetch_freedium(value):
     """Extract article text, never execute or frame the third-party website."""
     from lxml import html
-    address = article_address(value)
+    address = freedium_address(value)
     target = FREEDIUM_ORIGIN + "/" + address["medium_url"]
     try:
         response = PublicFeedHTTP().get(target, timeout=30, allowed_hosts=FREEDIUM_HOSTS)
@@ -173,8 +197,8 @@ def fetch_freedium(value):
         # Keep the original author's link, not the Freedium wrapper, in the library.
         for link in article.xpath('.//header//a/@href'):
             try:
-                original = article_address(urljoin(address["url"], link))
-                if original["id"] == address["id"]:
+                original = freedium_address(urljoin(address["url"], link))
+                if original["external_id"] == address["external_id"]:
                     address["url"] = original["url"]
                     break
             except ValueError:

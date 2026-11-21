@@ -14,7 +14,7 @@
     {
       "id": "freedium",
       "manifest": "freedium/connection.json",
-      "sha256": "939c2d72bba040fc1514aea9a24e8a1d929ccc6369041f254d6c4e3b7ba13249"
+      "sha256": "c799035f398b67a4d105d69ac0be2710c839a823963ad6a722d469132a585cb4"
     },
     {
       "id": "substack",
@@ -30,6 +30,11 @@
       "id": "medium",
       "manifest": "medium/connection.json",
       "sha256": "3454bc36146d3f227cb5b9675231e4b763a5d5b32a7b18fef96f366d4e6a5619"
+    },
+    {
+      "id": "publications",
+      "manifest": "publications/connection.json",
+      "sha256": "3473377e71af3558f851f4b6a4675e0dab49ac978b989b268b5ec097a4c86de7"
     }
   ]
 }

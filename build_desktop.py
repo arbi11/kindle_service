@@ -30,6 +30,9 @@ def notices(target):
         "EbookLib and wordfreq are not bundled in this desktop application.",
         "vis-network 10.1.5: https://github.com/visjs/vis-network (MIT OR Apache-2.0).",
         "Its unmodified standalone build runs locally. License texts are in licenses/vis-network/.", ""]
+    lines += ["Pi agent-core and pi-ai (MIT): https://github.com/earendil-works/pi",
+              "Pi and npm dependency notices: _internal/agent/dist/licenses/.",
+              "Bundled Node.js runtime notices: _internal/agent/runtime/NODE-LICENSE.txt.", ""]
     graph_vendor = ROOT / "desktop/ui/vendor/vis-network"
     graph_notices = folder / "vis-network"
     graph_notices.mkdir(exist_ok=True)
@@ -62,6 +65,7 @@ def notices(target):
 def main():
     if sys.platform != "linux":
         raise SystemExit("This release builder currently targets Linux. Build other platforms separately.")
+    subprocess.run([sys.executable, str(ROOT / "build_agent.py")], check=True, cwd=ROOT)
     dist = ROOT / "dist"
     work = ROOT / "build"
     environment = dict(os.environ)
@@ -70,6 +74,8 @@ def main():
         "--distpath", str(dist), "--workpath", str(work / "pyinstaller"), "--specpath", str(work),
         "--add-data", str(ROOT / "desktop/ui") + ":desktop/ui",
         "--add-data", str(ROOT / "connections") + ":connections",
+        "--add-data", str(ROOT / "agent/dist") + ":agent/dist",
+        "--add-data", str(ROOT / "agent/runtime") + ":agent/runtime",
         "--collect-data", "trafilatura", "--collect-data", "justext", "--collect-data", "dateparser",
         "--collect-submodules", "keyring.backends", "--copy-metadata", "keyring",
         "--exclude-module", "wordfreq", "--exclude-module", "faster_whisper",
@@ -77,6 +83,7 @@ def main():
         str(ROOT / "daily_edition.py")]
     subprocess.run(command, check=True, cwd=ROOT, env=environment)
     target = dist / "Quib27"
+    (target / "_internal/agent/runtime/node").chmod(0o755)
     shutil.copy2(ROOT / "desktop/install.py", target / "install.py")
     shutil.copy2(ROOT / "desktop/ui/icon.svg", target / "icon.svg")
     shutil.copy2(ROOT / "desktop/COPYRIGHT.txt", target / "COPYRIGHT.txt")

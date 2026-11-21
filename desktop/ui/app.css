@@ -282,7 +282,7 @@
 .connection-options .connected-source { flex-direction: column; align-items: stretch; gap: 12px; padding: 0 0 17px; border-top: 0; margin-bottom: 18px; border-bottom: 1px solid #dfe3d8; }
 .connection-options .connected-source-info strong { font-size: 12px; }
 .connection-options .connected-source-info p { font-size: 10px; line-height: 1.7; }
-.connection-options .connected-source-actions { gap: 13px; justify-content: flex-end; }
+.connection-options .connected-source-actions { gap: 13px; justify-content: flex-start; flex-wrap: wrap; }
 .connection-options .connected-source-actions .text-btn { font-size: 10px; margin-right: auto; }
 .connection-options .connected-source-actions .icon-btn { width: 27px; height: 27px; }
 .connection-options .connected-source-actions .icon-btn svg { width: 14px; height: 14px; }
@@ -340,6 +340,7 @@
 .connected-source-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
 .connected-source-actions .text-btn { font-size: 11px; }
 .connected-source-actions .text-btn svg { width: 13px; height: 13px; }
+.reader-selection { font: 13px/1.65 var(--sans); color: var(--muted); margin: 18px 0 30px; }
 .connections-empty { padding: 33px 0 35px; }
 .connections-empty h2 { font: 400 24px var(--serif); margin: 0 0 10px; }
 .connections-empty p { font-size: 12px; color: #829173; }

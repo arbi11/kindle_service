@@ -43,6 +43,33 @@ reviewed index. Custom executable adapters require reviewed app code and a relea
 See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
 to validate the catalogue. The core app's copyright terms are unchanged.
 
+## Publications prototype (v0.2.8)
+
+The right Connections panel now includes Publications. Add a publication or section
+URL, describe what to read (and exclude), set an article limit, and choose whether
+to try Freedium. Use **Sign in / reconnect** for subscriber access: complete login
+in the local publication browser, then click **Finish sign-in**. **Fetch articles**
+collects matching reading into the library. **Preferences** edits a saved source.
+
+Written preferences use the bundled Pi agent runtime and your configured AI key.
+Pi lists candidates and selects matching IDs with reasons; no matches is a valid
+result. Blank preferences fetch recent articles without AI selection. OpenAI agent
+calls use Responses; existing summarization behavior stays under Settings.
+The host retrieves article text from the feed/public page, the local saved browser
+session, or optional Freedium. Each publication has a separate local profile.
+Profiles currently have owner-only access without an added encryption layer.
+Real subscriber logins, two-factor flows and site layouts can vary.
+
+Freedium's direct import accepts original publication URLs as well as Medium links.
+Availability depends on Freedium; unsupported pages are not saved as full articles.
+No sending or scheduling is enabled by adding a publication. Existing reading and
+Kindle services remain independent.
+
+For a development checkout, run `python build_agent.py` once before testing written
+preferences. This builds pinned Pi packages and a private Node runtime; desktop
+releases include both, so readers need no separate Node installation. See
+[connection details](connections/README.md#publications-preferences-and-local-subscriber-sessions).
+
 ## The Daily Quib design preview
 
 The **Medium** connection follows a list of creators supplied as handles or

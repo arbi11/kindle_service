@@ -146,10 +146,14 @@ def main():
     parser.add_argument("--no-keyring", action="store_true", help="use private local credential files")
     parser.add_argument("--no-scheduler", action="store_true", help="disable scheduled tasks for this session")
     parser.add_argument("--screenshot", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--publication-browser-job", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     root = args.data_dir.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     root.chmod(0o700)
+    if args.publication_browser_job:
+        from .publication_browser import run_worker
+        return run_worker(root, args.publication_browser_job)
     lock = (root / "instance.lock").open("a+")
     service = None
     try:

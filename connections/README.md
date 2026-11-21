@@ -2,7 +2,7 @@
 
 The app owns reading, AI summaries, storage, scheduling, newsletters and EPUB
 delivery. Connections supply content candidates through connection API version 1.
-YouTube, Raindrop, Substack, Websites & blogs, Medium and Freedium use that same discovery interface.
+YouTube, Raindrop, Substack, Websites & blogs, Medium, Freedium and Publications use that same discovery interface.
 
 The first catalogue is bundled with the app and works offline. Only manifest
 versions listed and hash-pinned in `catalogue.json` are loaded. An unlisted file,
@@ -46,7 +46,7 @@ connection setup, collection engine or delivery code.
 
 ## Freedium: direct reading and optional discovery
 
-Paste a Medium article URL (or a copied Freedium URL) into Freedium's connection
+Paste an original publication article URL (or a copied Freedium URL) into Freedium's connection
 panel to save its text directly in the Quib27 library. This is a native reading
 flow, not an iframe: the host retrieves the article, extracts its content block
 and sanitizes it. Navigation, scripts, images and tracking widgets are not imported.
@@ -60,6 +60,11 @@ before queuing. Stable Medium story IDs prevent duplicates across tracking URLs,
 creator feeds, custom article domains, direct imports and older saved Freedium
 links imported from the original service. One-off imports need
 no subscription and can be included in an edition even with no active sources.
+
+Original non-Medium publication URLs are also accepted. Their canonical URLs
+identify saved articles; tracking parameters are removed while meaningful query
+parameters are retained. This does not promise coverage of every publisher:
+missing pages and service landing pages are reported, not saved as articles.
 
 Freedium reads `https://freedium-mirror.cfd/rss`, the public Recently Unlocked
 feed. It reads the linked article pages on that same host. No account is needed.
@@ -106,6 +111,55 @@ and Atom summaries are treated as previews and use article extraction; full
 content:encoded or Atom content can be read directly. Explicit paid previews are
 not represented as complete articles. Community contributors can propose more
 adapters through the existing GitHub review process.
+
+## Publications: preferences and local subscriber sessions
+
+Publications is the generic built-in connection. Save a website, section or feed
+URL, optional name, written preferences, a 1–10 article limit and a Freedium toggle.
+No publisher network request is needed to save the source. Preferences can be
+edited later. Fetching uses the existing source action and reading schedule.
+
+Discovery prefers RSS/Atom where declared, otherwise inspects article links and
+structured article records on the chosen page. A local Chromium worker can read
+client-rendered indexes. At most 40 candidates enter a selection. Existing saved
+URLs are excluded before AI processing, and the usual global preparation limit
+still applies.
+
+Written preferences use pinned `@earendil-works/pi-agent-core` 1.6.0. Pi runs with
+two typed tools: `list_articles` and `select_articles`. It respects exclusions,
+returns IDs with reasons, and can select nothing. The host validates every ID and
+limit before retrieval. A run has at most three model turns; the final selection
+tool terminates without another model request. OpenAI uses Responses for tools;
+OpenRouter uses its compatible Chat Completions protocol. The configured provider
+and key are used exclusively; there is no provider fallback. Blank preferences
+collect recent candidates without AI. Pi has no shell or general file tools.
+
+**Sign in / reconnect** opens a separate local Qt WebEngine window. The user
+completes sign-in and any two-factor check on the publisher's website, then clicks
+Finish sign-in. Quib27 saves that publication's browser profile and reuses it for
+article extraction. A saved-session indicator does not claim the publisher has
+accepted the login; Fetch articles verifies access. Expired sessions require
+reconnection. Disconnecting removes the publication's local browser profile while
+preserving saved reading. This prototype uses owner-private local profiles without
+an additional encryption layer.
+
+Full feed content and public pages are preferred, followed by the saved local
+session and, when enabled, Freedium. Only sanitized article text enters the reader.
+Subscriber text, publisher text and Freedium text retain their provenance. Reading
+also records Pi's short selection reason. Authentication is interactive; there is
+no CAPTCHA solver or automatic handling of arbitrary sign-in forms. Publisher
+layouts and subscriber flows still need real-world testing.
+
+Pi's API key is passed through a private stdin pipe, not process arguments or
+request files. Website credentials and browser cookies do not enter model input.
+Titles, descriptions and preferences reach the chosen provider; full source text
+is sent only if the reader enables article summaries. No Quib27 server is involved.
+
+Build the pinned agent and private Node runtime with `python build_agent.py`;
+`build_desktop.py` runs this step and bundles them automatically. `agent/runtime`
+and `agent/dist` are generated, ignored directories. `agent/package-lock.json`
+pins npm dependencies, and the builder verifies the official Node archive against
+its pinned SHA-256. Node and dependency notices accompany the release.
 
 ## Review and releases
 

@@ -78,7 +78,7 @@ def validate_manifest(data: dict) -> dict:
     for field, length in (("name", 80), ("description", 500), ("maintainer", 100)):
         if not isinstance(data[field], str) or not data[field].strip() or len(data[field]) > length:
             raise ValueError(f"Invalid connection {field}")
-    builtins = ("youtube", "raindrop", "substack", "websites", "medium")
+    builtins = ("youtube", "raindrop", "substack", "websites", "medium", "publications")
     if data["adapter"] not in (*builtins, "rss"):
         raise ValueError("This adapter is not supported")
     if data["adapter"] in builtins and data["adapter"] != data["id"]:

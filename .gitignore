@@ -39,6 +39,7 @@ desktop-data/
 *.AppImage
 credentials.json
 runtime.json
+**/publication-browser/
 venv/
 __pycache__/
 *.py[cod]
@@ -47,3 +48,6 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+node_modules/
+agent/runtime/
+agent/dist/

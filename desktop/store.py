@@ -90,7 +90,7 @@ class Store:
             columns = {row[1] for row in db.execute("PRAGMA table_info(items)")}
             if "connection_id" not in columns:
                 db.execute("ALTER TABLE items ADD COLUMN connection_id TEXT NOT NULL DEFAULT ''")
-            for column in ("content_source", "content_url"):
+            for column in ("content_source", "content_url", "selection_reason"):
                 if column not in columns:
                     db.execute("ALTER TABLE items ADD COLUMN " + column + " TEXT NOT NULL DEFAULT ''")
             db.execute("UPDATE items SET connection_id=COALESCE((SELECT kind FROM sources WHERE id=items.source_id),'') WHERE connection_id=''")
@@ -156,7 +156,7 @@ class Store:
 
     def add_item(self, *, kind, external_id, title, url="", author="", published=None,
                  body_html="", summary_html="", takeaway="", source_id=None, is_sample=False, connection_id="",
-                 content_source="", content_url=""):
+                 content_source="", content_url="", selection_reason=""):
         from .content import plain_text
         item_id = uid()
         if not connection_id and source_id:
@@ -164,9 +164,9 @@ class Store:
             connection_id = source["kind"] if source else ""
         words = len(plain_text(summary_html or body_html).split())
         self.execute("""INSERT OR IGNORE INTO items(id,source_id,kind,external_id,title,url,author,published,
-                     body_html,summary_html,takeaway,words,is_sample,created_at,connection_id,content_source,content_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     body_html,summary_html,takeaway,words,is_sample,created_at,connection_id,content_source,content_url,selection_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      (item_id, source_id, kind, external_id, title, url, author, published or now(),
-                      body_html, summary_html, takeaway, words, int(is_sample), now(), connection_id,content_source,content_url))
+                      body_html, summary_html, takeaway, words, int(is_sample), now(), connection_id,content_source,content_url,selection_reason))
         return self.query("SELECT id FROM items WHERE kind=? AND external_id=?", (kind, external_id), one=True)["id"]
 
     def items(self, search="", kind="all", status="all", limit=200, offset=0):

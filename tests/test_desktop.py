@@ -425,7 +425,7 @@ class HTTPTests(unittest.TestCase):
         denied.exception.close()
         with self.request("/api/connections") as response:
             catalogue = json.load(response)["connections"]
-        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium", "substack", "websites", "medium"])
+        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium", "substack", "websites", "medium", "publications"])
         self.assertTrue(all(connection["reviewed"] for connection in catalogue))
         first = None
         for _ in range(2):
@@ -444,6 +444,53 @@ class HTTPTests(unittest.TestCase):
                 self.request("/api/sources", "POST", {"kind": kind})
             self.assertEqual(denied.exception.code, 400)
             denied.exception.close()
+
+
+    def test_publication_setup_edit_login_and_removal_preserve_reading(self):
+        values = {"kind": "publications", "title": "A journal", "url": "https://journal.example/business",
+                  "preferences": "Long-term investing, no stock tips", "max_articles": 3, "freedium_fallback": True}
+        with self.request("/api/sources", "POST", values) as reply:
+            source_id = json.load(reply)["id"]
+        with self.request("/api/sources", "POST", values) as reply:
+            self.assertEqual(json.load(reply)["id"], source_id)
+        self.assertEqual(len(self.app.store.sources()), 1)
+        with self.request("/api/sources/"+source_id, "PATCH", {**values, "max_articles": 2}) as reply:
+            self.assertEqual(reply.status, 200)
+        self.assertEqual(self.app.store.sources()[0]["detail"]["max_articles"], 2)
+        for data in ({**values, "url": "https://another.example/business"}, {**values, "max_articles": 20}):
+            with self.assertRaises(HTTPError) as denied:
+                self.request("/api/sources/"+source_id, "PATCH", data)
+            self.assertEqual(denied.exception.code, 400)
+            denied.exception.close()
+        with patch.object(self.app.engine, "submit", return_value="test-job") as submit:
+            with self.request("/api/publications/"+source_id+"/login", "POST", {}) as reply:
+                self.assertEqual(json.load(reply)["job_id"], "test-job")
+            submit.assert_called_once_with("login_publication", {"source_id": source_id})
+        for kwargs in ({"auth": False}, {"origin": "https://other.example"}):
+            with self.assertRaises(HTTPError) as denied:
+                self.request("/api/publications/"+source_id+"/login", "POST", {}, **kwargs)
+            self.assertEqual(denied.exception.code, 403)
+            denied.exception.close()
+        profile = self.app.store.root / "publication-browser/profiles" / source_id
+        profile.mkdir(parents=True)
+        (profile / "synthetic-session").write_text("test fixture, not a real cookie")
+        item_id = self.app.store.add_item(kind="article", external_id="publication:fixture", title="Reading stays",
+                                          body_html="<p>Saved reading.</p>", source_id=source_id)
+        with self.request("/api/sources/"+source_id, "DELETE", {}) as reply:
+            self.assertEqual(reply.status, 200)
+        self.assertFalse(profile.exists())
+        self.assertIsNotNone(self.app.store.query("SELECT id FROM items WHERE id=?", (item_id,), one=True))
+
+    def test_generic_freedium_import_accepts_publication_urls_and_rejects_private_ones(self):
+        with patch.object(self.app.engine, "submit", return_value="test-job") as submit:
+            with self.request("/api/freedium/import", "POST", {"url": "https://journal.example/a-reading-article"}) as reply:
+                self.assertEqual(json.load(reply)["job_id"], "test-job")
+            submit.assert_called_once_with("import_freedium", {"url": "https://journal.example/a-reading-article"})
+            for url in ("https://127.0.0.1/article", "file:///etc/passwd", "https://journal.example/"):
+                with self.assertRaises(HTTPError) as denied:
+                    self.request("/api/freedium/import", "POST", {"url": url})
+                self.assertEqual(denied.exception.code, 400)
+                denied.exception.close()
 
 
 if __name__ == "__main__":
