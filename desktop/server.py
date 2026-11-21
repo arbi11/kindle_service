@@ -19,6 +19,7 @@ from . import __version__
 from .content import render_newsletter
 from .demo import seed
 from .engine import Engine
+from .medium import article_address
 from .knowledge import load as load_knowledge, graph as knowledge_graph, PILOT_FILE
 from .secrets import Secrets, NAMES
 from .store import DEFAULTS, Store, now, private_write, uid
@@ -320,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
                 connection = self.app.engine.catalogue.get(kind)
                 if kind == "youtube":
                     self.json({"job_id": self.app.engine.submit("add_youtube", data)})
-                elif kind in ("substack", "websites"):
+                elif kind in ("substack", "websites", "medium"):
                     self.json({"job_id": self.app.engine.submit("add_subscription", data)})
                 elif kind == "raindrop":
                     if not self.app.secrets.get("raindrop_token"):
@@ -345,6 +346,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.json({"id": source_id, "message": definition["name"] + " connected"})
                 else:
                     raise ValueError("Choose a source type")
+            elif path == "/api/freedium/import" and method == "POST":
+                address = article_address(data.get("url", ""))
+                self.json({"job_id": self.app.engine.submit("import_freedium", {"url": address["url"]})})
             elif re.fullmatch(r"/api/sources/[\w-]+", path):
                 source_id = path.rsplit("/", 1)[1]
                 if method == "DELETE":

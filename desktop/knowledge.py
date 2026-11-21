@@ -193,7 +193,7 @@ def graph(store, *, connection="all", start="", end=""):
               for t in brain.get("topics", []) if any(c in concept_ids for c in t["concept_ids"])]
     mapped = {c["item_id"] for c in citations.values()}
     names = {"youtube": "YouTube", "raindrop": "Raindrop", "freedium": "Freedium",
-             "substack": "Substack", "websites": "Websites & blogs", "other": "Other reading"}
+             "substack": "Substack", "websites": "Websites & blogs", "medium": "Medium", "other": "Other reading"}
     nodes, edges = [], []
 
     def link(source, target, relation):

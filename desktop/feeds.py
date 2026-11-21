@@ -69,13 +69,15 @@ class PublicHTTPSAdapter(HTTPAdapter):
 
 
 class PublicFeedHTTP:
-    def get(self, url, timeout=25, *, limit=MAX_DOCUMENT_BYTES):
+    def get(self, url, timeout=25, *, limit=MAX_DOCUMENT_BYTES, allowed_hosts=None):
         with requests.Session() as session:
             session.trust_env = False
             session.headers["User-Agent"] = "Quib27/0.2 (personal feed reader)"
             session.mount("https://", PublicHTTPSAdapter())
             for _ in range(6):
                 url = public_url(url)
+                if allowed_hosts is not None and urlsplit(url).hostname not in allowed_hosts:
+                    raise ValueError("This service redirected outside its allowed domains")
                 response = session.get(url, timeout=(10, min(timeout, 30)), allow_redirects=False, stream=True)
                 try:
                     if response.status_code in (301, 302, 303, 307, 308):

@@ -1,15 +1,16 @@
 {
-  "version": "1.0.1",
+  "version": "1.1.0",
   "api_version": 1,
   "maintainer": "Quib27 · arbi11",
   "id": "freedium",
   "name": "Freedium",
   "adapter": "rss",
-  "description": "Read articles from Freedium’s public Recently Unlocked feed. No account needed.",
+  "description": "Paste a Medium article link and read the saved article inside Quib27. The public Recently Unlocked feed is also available as an option.",
   "homepage": "https://freedium-mirror.cfd/",
   "icon": "rss",
   "permissions": [
     "Read the public feed and article pages on freedium-mirror.cfd.",
+    "Send the Medium article URLs you paste to Freedium to retrieve their text.",
     "No account credentials are required."
   ],
   "setup": "feed",
