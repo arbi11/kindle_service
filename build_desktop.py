@@ -27,7 +27,14 @@ def notices(target):
         "Qt WebEngine includes Chromium and its third-party notices.",
         "PyInstaller: GPL with a distribution exception for the generated application.",
         "FFmpeg is not bundled. Optional audio transcription uses the user's installation.",
-        "EbookLib and wordfreq are not bundled in this desktop application.", ""]
+        "EbookLib and wordfreq are not bundled in this desktop application.",
+        "vis-network 10.1.5: https://github.com/visjs/vis-network (MIT OR Apache-2.0).",
+        "Its unmodified standalone build runs locally. License texts are in licenses/vis-network/.", ""]
+    graph_vendor = ROOT / "desktop/ui/vendor/vis-network"
+    graph_notices = folder / "vis-network"
+    graph_notices.mkdir(exist_ok=True)
+    for name in ("LICENSE-MIT", "LICENSE-APACHE-2.0", "README.txt"):
+        shutil.copy2(graph_vendor / name, graph_notices / name)
     excluded = {"ebooklib", "wordfreq", "locate", "langcodes", "msgpack", "faster-whisper"}
     for distribution in sorted(metadata.distributions(), key=lambda d:d.metadata.get("Name", "").lower()):
         name = distribution.metadata.get("Name", "unknown")

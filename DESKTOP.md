@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.5 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.6 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -44,6 +44,14 @@ See [the contributor guide](connections/README.md) and run `python -m connection
 to validate the catalogue. The core app's copyright terms are unchanged.
 
 ## The Daily Quib design preview
+
+The **Knowledge graph** tab shows an interactive map of saved readings and their
+connections. Drag nodes, pan, zoom, search and inspect linked source passages.
+Filter by connection and an inclusive range of saved publication dates. Dates
+use the reader's configured timezone. An optional local [concept pilot](KNOWLEDGE.md)
+adds topics, shared concepts and suggested insights. Coverage counts distinguish
+these mapped readings from readings with source links only. The graph makes no AI
+calls and does not automatically extract concepts from the remaining library.
 
 The app contains the agreed three-column layout:
 

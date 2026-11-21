@@ -34,6 +34,7 @@ const icons = {
   expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/>',
   chevron:'<path d="m7 10 5 5 5-5"/>',
   rss:'<path d="M4 4a16 16 0 0 1 16 16M4 11a9 9 0 0 1 9 9"/><circle cx="5" cy="19" r="1"/>',
+  graph:'<circle cx="5" cy="6" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="18" r="2"/><path d="m7 6 9-1M6 8l5 8m6-9-4 9"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
 let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
@@ -46,6 +47,8 @@ let connectionsTab = 'yours';
 let expandedConnection = null, connectionRailScroll = 0;
 const connectionDrafts = new Map();
 let raindropCollections = [];
+let knowledge = null, libraryMode = 'reading', knowledgeTopic = null, knowledgeConcept = null, knowledgeQuery = '';
+let readerCitation = null, readerReturnFocus = null;
 const dialog = $('#modal');
 
 async function api(path, method='GET', body) {
@@ -78,8 +81,9 @@ async function refresh(renderPage=true) {
     page = await api('/items?' + new URLSearchParams({...query, offset:page.next_offset}));
     allItems.push(...page.items);
   }
+  const brain = data.knowledge_available ? await api('/knowledge').catch(error => ({available:true,error:error.message})) : null;
   if(epoch!==refreshEpoch) return;
-  state = data; items = [...new Map(allItems.map(item=>[item.id,item])).values()];
+  state = data; knowledge = brain; items = [...new Map(allItems.map(item=>[item.id,item])).values()];
   if (renderPage) render();
 }
 function navigation(next) {
@@ -96,11 +100,12 @@ function connectionFilterButtons() {
 function render() {
   if (!state) return;
   if (currentItem) { renderReader(); return; }
+  KnowledgeGraph.unmount();
   captureConnectionDraft();
-  const pages = [['today','home','Today'],['library','book','Library'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
-  const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
+  const pages = [['today','home','Today'],['library','book','Library'],['knowledge','graph','Knowledge graph'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
+  const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,knowledge:KnowledgeGraph.page,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
   $('#app').innerHTML = `
-    <div class="shell digest-shell">
+    <div class="shell digest-shell ${!currentEdition&&(view==='knowledge'||view==='library'&&libraryMode==='knowledge')?'knowledge-shell':''}">
       <aside class="sidebar">
         <div class="digest-brand"><img class="brand-mark" src="/icon.svg" width="36" height="36" alt=""><span class="brand-name">Quib27</span></div>
         <div class="nav-label" id="reading-room-label">Your reading room</div>
@@ -121,6 +126,7 @@ function render() {
     </div>`;
   restoreConnectionDraft();
   updateTask();
+  if(view==='knowledge'&&!currentEdition) KnowledgeGraph.mount();
 }
 function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
 function empty(title, text, button='', i='book') { return `<div class="empty"><div class="empty-icon">${icon(i)}</div><h2>${title}</h2><p>${text}</p>${button}</div>`; }
@@ -213,8 +219,63 @@ function todayPage() {
   </div>`;
 }
 function libraryPage() {
+  if(libraryMode==='knowledge' && knowledge?.available) return knowledgePage();
   const items = connectionItems();
-  return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
+  return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + libraryModes() + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
+}
+function libraryModes() {
+  if(!knowledge?.available) return '';
+  return `<div class="tabs library-modes" role="group" aria-label="Library view">${[['reading','Reading'],['knowledge','Knowledge']].map(([id,title])=>`<button data-action="library-mode" data-value="${id}" class="${libraryMode===id?'active':''}" aria-pressed="${libraryMode===id}">${title}${id==='knowledge'?'<span class="knowledge-pilot-label">Pilot</span>':''}</button>`).join('')}</div>`;
+}
+function knowledgeScope() {
+  const citations = new Map((knowledge.citations||[]).filter(c=>digestConnection==='all'||c.connection_id===digestConnection).map(c=>[c.id,c]));
+  const insights = new Map((knowledge.insights||[]).filter(i=>i.citation_ids.some(id=>citations.has(id))).map(i=>[i.id,i]));
+  const concepts = (knowledge.concepts||[]).filter(c=>c.insight_ids.some(id=>insights.has(id)));
+  const topics = (knowledge.topics||[]).filter(t=>t.concept_ids.some(id=>concepts.some(c=>c.id===id)));
+  return {citations,insights,concepts,topics};
+}
+function knowledgePage() {
+  let result = heading('Your library.','Reading, and the ideas you take from it.') + libraryModes();
+  if(knowledge.error) return result + empty('The knowledge pilot needs a moment.',esc(knowledge.error));
+  const scoped = knowledgeScope();
+  const topic = scoped.topics.find(t=>t.id===knowledgeTopic);
+  const concept = scoped.concepts.find(c=>c.id===knowledgeConcept&&(!topic||topic.concept_ids.includes(c.id)));
+  const connection = digestConnection==='all'?'All connections':state.catalogue?.find(c=>c.id===digestConnection)?.name||'Saved reading';
+  const covered = new Set(Array.from(scoped.citations.values()).map(c=>c.item_id)).size;
+  const coverage = digestConnection==='all'?`Pilot: ${knowledge.stats.readings} of ${knowledge.stats.library} saved pieces`:`Showing ${covered} of ${knowledge.stats.readings} pilot pieces`;
+  result += `<section class="knowledge-view"><div class="knowledge-intro"><h2>Knowledge</h2><p>Explore topics, follow a concept, then check the passages behind each suggested insight.</p><p class="knowledge-coverage">${coverage} · ${esc(connection)}</p></div>
+    <div class="knowledge-tools"><nav class="knowledge-breadcrumbs" aria-label="Knowledge location"><button data-action="knowledge-home">Topics</button>${topic?`<span>/</span><button data-action="knowledge-topic" data-id="${esc(topic.id)}">${esc(topic.title)}</button>`:''}${concept?`<span>/</span><span aria-current="page">${esc(concept.title)}</span>`:''}</nav><div class="search-wrap">${icon('search')}<input id="knowledge-search" aria-label="Search knowledge pilot" placeholder="Search this pilot…" value="${esc(knowledgeQuery)}"></div></div>
+    <div id="knowledge-results">${knowledgeResults(scoped,topic,concept)}</div></section>`;
+  return result;
+}
+function knowledgeResults(scoped,topic,concept) {
+  if(knowledgeQuery.trim()) {
+    const terms=knowledgeQuery.toLocaleLowerCase().trim().split(/\s+/);
+    const matches=scoped.concepts.filter(c=>{
+      const text=[c.title,c.description,...(knowledge.topics||[]).filter(t=>t.concept_ids.includes(c.id)).map(t=>t.title),...c.insight_ids.flatMap(id=>{
+        const insight=scoped.insights.get(id);
+        return insight?[insight.text,...insight.citation_ids.flatMap(cid=>{const citation=scoped.citations.get(cid);return citation?[citation.title,citation.quote]:[];})]:[];
+      })].join(' ').toLocaleLowerCase();
+      return terms.every(term=>text.includes(term));
+    });
+    return `<h3 class="knowledge-section-title">${matches.length} matching concept${matches.length===1?'':'s'}</h3>${matches.map(c=>knowledgeConceptRow(c,scoped)).join('')||'<p class="knowledge-empty">No concepts match. Search covers the selected pilot readings.</p>'}`;
+  }
+  if(concept) {
+    const relatedTopics=scoped.topics.filter(t=>t.concept_ids.includes(concept.id));
+    return `<header class="knowledge-detail-heading"><span class="small-label">Concept</span><h3>${esc(concept.title)}</h3><p>${esc(concept.description)}</p>${relatedTopics.length>1?`<div class="knowledge-shared">Appears in ${relatedTopics.map(t=>`<button class="text-btn" data-action="knowledge-topic" data-id="${esc(t.id)}">${esc(t.title)}</button>`).join('<span>·</span>')}</div>`:''}</header><p class="knowledge-draft-note">AI drafts for review. These describe source perspectives; they have not been independently verified or saved as your own conclusions.</p>${concept.insight_ids.filter(id=>scoped.insights.has(id)).map(id=>knowledgeInsight(scoped.insights.get(id),scoped)).join('')}`;
+  }
+  if(topic) return `<header class="knowledge-detail-heading"><span class="small-label">Topic</span><h3>${esc(topic.title)}</h3><p>${esc(topic.question)}</p></header><div class="knowledge-rows">${scoped.concepts.filter(c=>topic.concept_ids.includes(c.id)).map(c=>knowledgeConceptRow(c,scoped)).join('')}</div>`;
+  return `<div class="knowledge-rows">${scoped.topics.map(t=>`<button class="knowledge-row knowledge-topic" data-action="knowledge-topic" data-id="${esc(t.id)}"><span><strong>${esc(t.title)}</strong><span>${esc(t.question)}</span><small>${scoped.concepts.filter(c=>t.concept_ids.includes(c.id)).length} concepts</small></span>${icon('arrow')}</button>`).join('')||'<p class="knowledge-empty">The pilot has no readings from this connection. Select All connections to explore it.</p>'}</div><p class="knowledge-footnote">${scoped.topics.length} topics · ${scoped.concepts.length} reusable concepts · ${scoped.insights.size} suggested insights. A concept can belong to more than one topic.</p>`;
+}
+function knowledgeConceptRow(concept,scoped) {
+  const sources = new Set(concept.insight_ids.flatMap(id=>(scoped.insights.get(id)?.citation_ids||[]).flatMap(cid=>scoped.citations.has(cid)?[scoped.citations.get(cid).item_id]:[])));
+  return `<button class="knowledge-row knowledge-concept" data-action="knowledge-concept" data-id="${esc(concept.id)}"><span><strong>${esc(concept.title)}</strong><span>${esc(concept.description)}</span><small>${sources.size} saved piece${sources.size===1?'':'s'}</small></span>${icon('arrow')}</button>`;
+}
+function knowledgeInsight(insight,scoped) {
+  return `<article class="knowledge-insight" data-insight-id="${esc(insight.id)}"><div class="knowledge-insight-label">AI draft · Source perspective</div><p class="knowledge-insight-text">${esc(insight.text)}</p>${insight.citation_ids.filter(id=>scoped.citations.has(id)).map(id=>{
+    const c=scoped.citations.get(id),connection=state.catalogue?.find(item=>item.id===c.connection_id)?.name||'Saved reading';
+    return `<div class="knowledge-evidence"><div class="article-meta"><span>${esc(connection)}</span><span>·</span><span>${esc(c.material_label)}</span></div><h4>${esc(c.title)}</h4><blockquote>${esc(c.quote)}</blockquote>${c.content==='summary'?`<p class="knowledge-source-note">This passage comes from the saved summary.${!c.has_original?(c.kind==='video'?' An original transcript is not available here.':' The original article is not available here.'):''}</p>`:''}${c.available?`<button id="citation-${esc(c.id)}" class="text-btn" data-action="knowledge-source" data-id="${esc(c.id)}">Read this passage ${icon('arrow')}</button>`:`<p class="knowledge-source-note" role="status">${esc(c.reason)}</p>`}</div>`;
+  }).join('')}</article>`;
 }
 function sourceRow(source) {
   return `<div class="connected-source" data-source-id="${esc(source.id)}">
@@ -280,15 +341,38 @@ function editionPage() {
   const e=currentEdition, words=e.items.reduce((sum,i)=>sum+i.words,0);
   return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to ${view==='library'?'library':'today'}</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
 }
-async function openReader(id) {
-  if (!currentItem) { readerReturnScroll = window.scrollY; readerReturnItemId = id; }
-  currentItem = await api('/items/'+id); readerTab = currentItem.summary_html?'summary':'original'; lastView=view; renderReader(); window.scrollTo(0,0);
+async function openReader(id,citation=null) {
+  const item = await api('/items/'+id);
+  if(citation) {
+    const body=citation.content==='summary'?item.summary_html:item.body_html;
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))).map(n=>n.toString(16).padStart(2,'0')).join('');
+    if(hash!==citation.content_hash) throw new Error('The saved text has changed. Reopen Knowledge to check this citation again.');
+  }
+  if (!currentItem) { readerReturnScroll = window.scrollY; readerReturnItemId = id; readerReturnFocus=document.activeElement?.id||null; }
+  currentItem = item; readerCitation=citation; readerTab = citation?citation.content:currentItem.summary_html?'summary':'original'; lastView=view; renderReader();
+  if(citation) $('.cited-passage')?.scrollIntoView({block:'center'}); else window.scrollTo(0,0);
 }
 function renderReader() {
+  KnowledgeGraph.unmount();
   captureConnectionDraft();
-  const item=currentItem, queue=currentEdition?currentEdition.items:view==='today'?digestItems():connectionItems();
+  const item=currentItem, queue=readerCitation?[]:currentEdition?currentEdition.items:view==='knowledge'?KnowledgeGraph.readingQueue():view==='today'?digestItems():connectionItems();
   const position=queue.findIndex(i=>i.id===item.id), next=position>=0?queue[position+1]:null;
   $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand" title="Quib27"><img class="brand-mark" src="/icon.svg" width="26" height="26" alt="">Quib27</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button><button class="icon-btn" data-action="reader-theme" aria-label="Change reader theme">${icon(readerTheme==='dark'?'sun':'moon')}</button><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
+  decorateCitedPassage();
+  if(lastView==='knowledge') $('[data-action="reader-back"]').setAttribute('aria-label','Back to knowledge graph');
+}
+function decorateCitedPassage() {
+  if(!readerCitation) return;
+  $('[data-action="reader-back"]').setAttribute('aria-label','Back to knowledge');
+  const note=document.createElement('p');note.className='reader-citation-note';
+  note.textContent='From Knowledge · '+readerCitation.material_label;
+  $('.prose').before(note);
+  if(readerTab!==readerCitation.content) {note.textContent+=' · The cited passage is in the other text tab.';return;}
+  const blocks=Array.from($('.prose').querySelectorAll('p,h1,h2,h3,h4,li,pre,blockquote,figcaption')).filter(n=>!n.querySelector('p,li,pre,blockquote')&&n.textContent.trim());
+  const block=blocks[readerCitation.paragraph];
+  if(block&&block.textContent.replace(/\s+/g,' ').trim().includes(readerCitation.quote)) {
+    block.classList.add('cited-passage');block.dataset.citationId=readerCitation.id;
+  } else note.textContent+=' · This passage could not be located. Please check the saved text.';
 }
 function modal(content, eyebrow='QUIB27') {
   dialog.innerHTML=`<div class="modal-head"><span class="eyebrow">${eyebrow}</span><button class="icon-btn" data-action="close-modal" aria-label="Close">${icon('close')}</button></div><div class="modal-body">${content}</div>`;
@@ -395,6 +479,7 @@ document.addEventListener('click',async event=>{
   try {
     if(target.dataset.connection) {
       digestConnection=target.dataset.connection;
+      if(view==='knowledge') {KnowledgeGraph.setConnection(digestConnection);return;}
       navigation(view==='library'?'library':'today');
       return;
     }
@@ -402,6 +487,15 @@ document.addEventListener('click',async event=>{
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
     if(a==='close-modal') dialog.close();
+    else if(a==='library-mode') {libraryMode=target.dataset.value==='knowledge'?'knowledge':'reading';render();}
+    else if(a==='knowledge-home') {knowledgeTopic=null;knowledgeConcept=null;knowledgeQuery='';render();}
+    else if(a==='knowledge-topic') {knowledgeTopic=id;knowledgeConcept=null;knowledgeQuery='';render();window.scrollTo(0,0);}
+    else if(a==='knowledge-concept') {
+      const parents=knowledge.topics.filter(t=>t.concept_ids.includes(id));
+      if(!parents.some(t=>t.id===knowledgeTopic)) knowledgeTopic=parents[0]?.id||null;
+      knowledgeConcept=id;knowledgeQuery='';render();window.scrollTo(0,0);
+    }
+    else if(a==='knowledge-source') {const citation=view==='knowledge'?KnowledgeGraph.citation(id):knowledge?.citations.find(c=>c.id===id);if(citation?.available) await openReader(citation.item_id,citation);}
     else if(a==='expand-connection') {
       captureConnectionDraft();expandedConnection=expandedConnection===id?null:id;
       renderConnectionRail();
@@ -423,7 +517,7 @@ document.addEventListener('click',async event=>{
     else if(a==='read') await openReader(id);
     else if(a==='edition') {currentEdition=await api('/editions/'+id);currentItem=null;render();window.scrollTo(0,0);}
     else if(a==='back-edition') {currentEdition=null;render();}
-    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);(document.getElementById('title-'+readerReturnItemId)||document.querySelector('[data-action="read"][data-id="'+CSS.escape(readerReturnItemId)+'"]'))?.focus({preventScroll:true});}
+    else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;readerCitation=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);(document.getElementById(readerReturnFocus)||document.getElementById('title-'+readerReturnItemId)||document.querySelector('[data-action="read"][data-id="'+CSS.escape(readerReturnItemId)+'"]'))?.focus({preventScroll:true});}
     else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
     else if(a==='reader-theme') {readerTheme={light:'sepia',sepia:'dark',dark:'light'}[readerTheme]||'light';localStorage.setItem('readerTheme',readerTheme);await api('/settings','POST',{settings:{reader_theme:readerTheme}});const scroll=window.scrollY;renderReader();window.scrollTo(0,scroll);}
     else if(a==='font-smaller'||a==='font-larger') {readerSize=Math.min(28,Math.max(16,readerSize+(a==='font-larger'?1:-1)));localStorage.setItem('readerSize',readerSize);await api('/settings','POST',{settings:{reader_size:readerSize}});$('.reader-shell').style.setProperty('--reader-size',readerSize+'px');}
@@ -452,6 +546,11 @@ document.addEventListener('click',async event=>{
   } catch(e) {toast(e.message,true);}
 });
 document.addEventListener('input',event=>{
+  if(event.target.id==='knowledge-search') {
+    knowledgeQuery=event.target.value;
+    const scoped=knowledgeScope(),topic=scoped.topics.find(t=>t.id===knowledgeTopic),concept=scoped.concepts.find(c=>c.id===knowledgeConcept);
+    $('#knowledge-results').innerHTML=knowledgeResults(scoped,topic,concept);
+  }
   if(event.target.id==='search') {
     clearTimeout(searchTimer);const position=event.target.selectionStart;
     searchTimer=setTimeout(async()=>{filters.q=event.target.value;await refresh();const input=$('#search');input?.focus();input?.setSelectionRange(position,position);},250);
@@ -475,7 +574,7 @@ document.addEventListener('keydown',event=>{
   }
   if(event.key==='Enter'&&event.target.matches('[role="button"][data-action]')) event.target.click();
   if(event.key==='Escape'&&currentItem&&!dialog.open) $('[data-action="reader-back"]')?.click();
-  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();navigation('library');setTimeout(()=>$('#search')?.focus(),150);}
+  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();if(view==='knowledge'&&!currentItem){$('#graph-search')?.focus();return;}libraryMode='reading';navigation('library');setTimeout(()=>$('#search')?.focus(),150);}
 });
 dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)dialog.close();}});
 window.addEventListener('scroll',()=>{if(currentItem){const max=document.documentElement.scrollHeight-window.innerHeight;const bar=$('#reading-progress');if(bar)bar.style.width=(max>0?window.scrollY/max*100:100)+'%';}},{passive:true});

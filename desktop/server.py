@@ -19,6 +19,7 @@ from . import __version__
 from .content import render_newsletter
 from .demo import seed
 from .engine import Engine
+from .knowledge import load as load_knowledge, graph as knowledge_graph, PILOT_FILE
 from .secrets import Secrets, NAMES
 from .store import DEFAULTS, Store, now, private_write, uid
 
@@ -116,7 +117,8 @@ class Application:
                 "deliveries": self.store.query("SELECT d.*,e.title AS edition_title FROM deliveries d LEFT JOIN editions e ON e.id=d.edition_id ORDER BY d.created_at DESC LIMIT 30"),
                 "next_run": min(slots).isoformat() if slots and settings["schedule_enabled"] else None,
                 "legacy_available": legacy, "data_directory": str(self.store.root),
-                "autostart": self.autostart_path().exists()}
+                "autostart": self.autostart_path().exists(),
+                "knowledge_available": (self.store.root / PILOT_FILE).is_file()}
 
     def autostart_path(self):
         return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "autostart/daily-edition.desktop"
@@ -213,6 +215,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(self.app.bootstrap())
             elif path == "/api/connections":
                 self.json({"connections": self.app.engine.catalogue.public(self.app.store.sources())})
+            elif path == "/api/knowledge":
+                self.json(load_knowledge(self.app.store))
+            elif path == "/api/knowledge/graph":
+                self.json(knowledge_graph(self.app.store, connection=params.get("connection", ["all"])[0],
+                          start=params.get("from", [""])[0], end=params.get("to", [""])[0]))
             elif path == "/api/items":
                 limit = max(1, min(int(params.get("limit", ["200"])[0]), 500))
                 offset = max(0, min(int(params.get("offset", ["0"])[0]), 2**31 - 1))
@@ -238,7 +245,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.headers_common("text/html; charset=utf-8", len(payload), {"Content-Disposition": 'attachment; filename="Daily-Edition.html"'})
                     self.wfile.write(payload)
             else:
-                assets = {"/": "index.html", "/app.css": "app.css", "/app.js": "app.js", "/icon.svg": "icon.svg"}
+                assets = {"/": "index.html", "/app.css": "app.css", "/app.js": "app.js", "/icon.svg": "icon.svg",
+                          "/knowledge-graph.js": "knowledge-graph.js",
+                          "/vendor/vis-network.min.js": "vendor/vis-network/vis-network.min.js"}
                 if path not in assets:
                     self.json({"error": "Not found"}, 404)
                     return

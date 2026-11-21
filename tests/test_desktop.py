@@ -287,6 +287,55 @@ class HTTPTests(unittest.TestCase):
         with self.request("/api/items?status=saved") as response:
             self.assertEqual(len(json.load(response)["items"]), 1)
 
+    def test_knowledge_uses_the_private_session_and_never_writes_reading_state(self):
+        from knowledge_fixture import populate
+        from desktop.knowledge import PILOT_FILE
+        with self.request("/api/knowledge") as response:
+            self.assertEqual(json.load(response), {"available": False})
+        populate(self.app.store)
+        before = self.app.store.query("SELECT * FROM items ORDER BY id")
+        with self.assertRaises(HTTPError) as error:
+            self.request("/api/knowledge", auth=False)
+        self.assertEqual(error.exception.code, 401)
+        error.exception.close()
+        with self.request("/api/knowledge") as response:
+            result = json.load(response)
+            self.assertEqual(result["stats"]["readings"], 2)
+            self.assertTrue(all(c["available"] for c in result["citations"]))
+        self.assertEqual(self.app.store.query("SELECT * FROM items ORDER BY id"), before)
+        (self.app.store.root / PILOT_FILE).write_text("broken JSON")
+        with self.assertRaises(HTTPError) as error:
+            self.request("/api/knowledge")
+        self.assertEqual(error.exception.code, 400)
+        error.exception.close()
+        with self.request("/api/items") as response:
+            self.assertTrue(json.load(response)["items"])
+
+    def test_graph_endpoint_is_authenticated_filtered_and_uses_local_assets(self):
+        from knowledge_fixture import populate
+        populate(self.app.store)
+        with self.assertRaises(HTTPError) as error:
+            self.request("/api/knowledge/graph", auth=False)
+        self.assertEqual(error.exception.code, 401)
+        error.exception.close()
+        with self.request("/api/knowledge/graph?connection=youtube") as response:
+            result = json.load(response)
+            self.assertEqual(result["stats"]["readings"], 1)
+            self.assertEqual(result["stats"]["mapped"], 1)
+            self.assertEqual([c["id"] for c in result["citations"]], ["memory-source"])
+        with self.assertRaises(HTTPError) as error:
+            self.request("/api/knowledge/graph?from=2026-11-21&to=2026-11-01")
+        self.assertEqual(error.exception.code, 400)
+        error.exception.close()
+        for path in ("/knowledge-graph.js", "/vendor/vis-network.min.js"):
+            with self.request(path) as response:
+                self.assertIn("javascript", response.headers["Content-Type"])
+                self.assertGreater(len(response.read()), 1000)
+        with self.request("/") as response:
+            page = response.read().decode()
+            self.assertIn('/vendor/vis-network.min.js', page)
+            self.assertNotIn('https://unpkg.com', page)
+
     def test_export_endpoints_return_actual_epub_and_newsletter(self):
         edition = self.app.store.editions()[0]
         with self.request("/api/editions/" + edition["id"] + "/epub") as response:
