@@ -25,6 +25,7 @@ from .content import sanitize, plain_text, paragraphs_html, render_newsletter
 from .store import now, uid
 from .connections import Catalogue, Feed
 from .feeds import Subscription, resolve_subscription
+from .medium import article_address, creator_list, fetch_freedium, resolve_creator, saved_article
 
 log = logging.getLogger("daily-edition")
 
@@ -56,7 +57,7 @@ class Engine:
                 "transcribe": {"openai_model": "gpt-transcribe", "cloud_max_minutes_per_video": s["audio_minutes_per_video"]}}
 
     def submit(self, kind, payload=None):
-        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "add_subscription", "import_legacy", "import_epub"}
+        allowed = {"prepare", "send", "test_ai", "test_raindrop", "test_smtp", "add_youtube", "add_subscription", "import_freedium", "import_legacy", "import_epub"}
         if kind not in allowed:
             raise ValueError("Unknown task")
         with self.store.lock:
@@ -102,6 +103,23 @@ class Engine:
 
     def job_add_subscription(self, job_id, payload):
         kind = payload.get("kind")
+        if kind == "medium":
+            feeds = creator_list(payload.get("url", ""))
+            failures, source_ids = [], []
+            for index, feed in enumerate(feeds):
+                self.store.progress(job_id, f"Finding Medium creator {index + 1} of {len(feeds)}…", 10 + int(70 * index / len(feeds)))
+                try:
+                    source = resolve_creator(feed)
+                    source["detail"]["connection_version"] = self.catalogue.get(kind).definition["version"]
+                    source_ids.append(self.store.add_source(kind, source["title"], source["url"], source["detail"]))
+                except Exception as exc:
+                    failures.append(feed.rsplit("@", 1)[-1] + ": " + self.secrets.redact(exc))
+            if not source_ids:
+                raise ValueError("No Medium creators were added. " + " | ".join(failures[:3]))
+            message = f"Following {len(source_ids)} Medium creator{'s' if len(source_ids) != 1 else ''}. Fetch articles now or use your reading schedule."
+            if failures:
+                message += " Could not follow: " + "; ".join(failures)
+            return {"message": message, "source_ids": source_ids, "warnings": failures}
         if kind not in ("substack", "websites"):
             raise ValueError("Choose Substack or Websites & blogs")
         self.store.progress(job_id, "Finding the publication’s feed…", 25)
@@ -109,6 +127,26 @@ class Engine:
         source["detail"]["connection_version"] = self.catalogue.get(kind).definition["version"]
         source_id = self.store.add_source(kind, source["title"], source["url"], source["detail"])
         return {"message": "Following " + source["title"], "source_id": source_id}
+
+    def job_import_freedium(self, job_id, payload):
+        address = article_address(payload.get("url", ""))
+        existing = saved_article(self.store, address["url"])
+        if existing:
+            return {"message": "This article is already in your library.", "item_id": existing}
+        self.store.progress(job_id, "Getting the article from Freedium…", 25)
+        article = fetch_freedium(address["url"])
+        summary, takeaway = "", ""
+        settings = self.store.settings()
+        if settings["summarize_articles"] and self.secrets.get(settings["provider"] + "_key"):
+            self.store.progress(job_id, "Summarizing the saved article…", 65)
+            with rk.http() as session:
+                takeaway, summary = self.summarize_article(session, article["title"], plain_text(article["body_html"]))
+        item_id = self.store.add_item(kind="article", external_id=address["external_id"], connection_id="freedium",
+                                      title=article["title"], url=article["url"], author=article["author"] or "Medium author",
+                                      published=article["published"], body_html=article["body_html"],
+                                      content_source=article["content_source"], content_url=article["content_url"],
+                                      takeaway=takeaway, summary_html=sanitize(summary))
+        return {"message": "Article saved. You can read it in Quib27 now.", "item_id": item_id, "added": 1}
 
     def job_test_raindrop(self, job_id, payload):
         if not self.secrets.get("raindrop_token"):
@@ -168,6 +206,8 @@ class Engine:
             if attempted >= remaining or getattr(self, "_attempts_left", remaining) <= 0:
                 break
             external_id = bookmark.external_id
+            if source["kind"] == "medium" and saved_article(self.store, bookmark.url):
+                continue
             if self.store.known("article", external_id, source["kind"], bookmark.url):
                 continue
             attempted += 1
@@ -190,7 +230,8 @@ class Engine:
                 self.store.add_item(kind="article", external_id=external_id, title=article.title or bookmark.url,
                                     url=article.url, author=bookmark.author or article.author or article.site or urlparse(article.url).hostname or "Article",
                                     published=bookmark.published or now(), body_html=body,
-                                    summary_html=sanitize(summary), takeaway=takeaway, source_id=source["id"])
+                                    summary_html=sanitize(summary), takeaway=takeaway, source_id=source["id"],
+                                    content_source=getattr(article, "content_source", ""), content_url=getattr(article, "content_url", ""))
                 added += 1
             except Exception as exc:
                 errors.append((bookmark.title or bookmark.url)[:90] + ": " + self.secrets.redact(exc))
@@ -258,7 +299,7 @@ class Engine:
             if not sources:
                 raise ValueError("Choose an enabled connection source before fetching articles")
         sources.sort(key=lambda source: (source["checked_at"] or "", source["created_at"]))
-        if not sources:
+        if not sources and not self.store.query("SELECT 1 FROM items i WHERE is_sample=0 AND NOT EXISTS(SELECT 1 FROM edition_items ei WHERE ei.item_id=i.id) LIMIT 1", one=True):
             raise ValueError("Add a connection in Manage connections first")
         remaining, errors, added = s["max_items_per_run"], [], 0
         self._attempts_left = remaining

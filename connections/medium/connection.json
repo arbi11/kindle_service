@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "api_version": 1,
+  "maintainer": "Quib27 · arbi11",
+  "id": "medium",
+  "name": "Medium",
+  "adapter": "medium",
+  "description": "Follow Medium creators by @handle or profile link. New articles are saved in Quib27; Freedium is tried automatically for excerpts.",
+  "homepage": "https://medium.com/",
+  "icon": "book",
+  "permissions": [
+    "Read the public creator RSS feeds you choose and their article pages.",
+    "Send article URLs to freedium-mirror.cfd when Medium only supplies an excerpt or cannot be read.",
+    "No Medium login, paid subscription, cookies or account credentials are required.",
+    "Local and private network addresses are blocked."
+  ],
+  "setup": "medium"
+}

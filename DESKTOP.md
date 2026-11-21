@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.6 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.7 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -44,6 +44,13 @@ See [the contributor guide](connections/README.md) and run `python -m connection
 to validate the catalogue. The core app's copyright terms are unchanged.
 
 ## The Daily Quib design preview
+
+The **Medium** connection follows a list of creators supplied as handles or
+profile links. Fetch articles per creator or use the existing reading schedule.
+Medium excerpts automatically try Freedium. The **Freedium** connection also
+accepts individual article links and saves readable text inside Quib27, with no
+need to open its website. The reader identifies text provided through Freedium.
+These paths work without an AI key; an unavailable article is reported and retried.
 
 The **Knowledge graph** tab shows an interactive map of saved readings and their
 connections. Drag nodes, pan, zoom, search and inspect linked source passages.

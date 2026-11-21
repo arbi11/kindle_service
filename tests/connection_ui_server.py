@@ -16,11 +16,13 @@ from desktop.server import Application
 from desktop.store import now
 from test_connections import LINK, article, response, rss
 from test_subscriptions import BLOG_SITE, SUBSTACK_SITE, publication_request
+from test_medium import network as medium_request
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--medium-demo", action="store_true")
     args = parser.parse_args()
     original = requests.sessions.Session.request
 
@@ -30,6 +32,8 @@ def main():
             return original(session, method, url, **kwargs)
         if url == "https://freedium-mirror.cfd/rss":
             return response(url, rss())
+        if host == "medium.com" or url.startswith("https://freedium-mirror.cfd/https://medium.com/"):
+            return medium_request(method, url, **kwargs)
         if url == LINK or host == "reading.example":
             return response(url, article())
         if url.startswith((BLOG_SITE, SUBSTACK_SITE)):
@@ -52,6 +56,9 @@ def main():
          patch("smtplib.SMTP_SSL", side_effect=AssertionError("Mail disabled in UI tests")), \
          patch("smtplib.SMTP", side_effect=AssertionError("Mail disabled in UI tests")):
         app = Application(args.data_dir, use_keyring=False, scheduler=False)
+        if args.medium_demo:
+            app.store.save_settings({"onboarding_done": True, "schedule_enabled": False,
+                                     "auto_send": False, "summarize_articles": False})
         try:
             print("Connection UI fixture service ready.", flush=True)
             stopped.wait()

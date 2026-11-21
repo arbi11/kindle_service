@@ -311,6 +311,38 @@ class HTTPTests(unittest.TestCase):
         with self.request("/api/items") as response:
             self.assertTrue(json.load(response)["items"])
 
+    def test_medium_creators_and_native_freedium_import_use_existing_authenticated_jobs(self):
+        from test_medium import network, STORY
+        def finish(job_id):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                job = self.app.store.query("SELECT * FROM jobs WHERE id=?", (job_id,), one=True)
+                if job['status'] in ('done', 'failed'):
+                    self.assertEqual(job['status'], 'done', job['message'])
+                    return json.loads(job['result'])
+                time.sleep(.01)
+            self.fail('Connector job did not finish')
+        with self.assertRaises(HTTPError) as denied:
+            self.request('/api/sources', 'POST', {'kind':'medium','url':'@alice'}, auth=False)
+        self.assertEqual(denied.exception.code, 403)
+        denied.exception.close()
+        with self.assertRaises(HTTPError) as invalid:
+            self.request('/api/freedium/import', 'POST', {'url':'https://127.0.0.1/private'})
+        self.assertEqual(invalid.exception.code, 400)
+        invalid.exception.close()
+        with patch('requests.sessions.Session.request', side_effect=network):
+            with self.request('/api/sources', 'POST', {'kind':'medium','url':'@alice'}) as response:
+                finish(json.load(response)['job_id'])
+            self.assertEqual(self.app.store.sources()[0]['kind'], 'medium')
+            with self.request('/api/freedium/import', 'POST', {'url':STORY}) as response:
+                result = finish(json.load(response)['job_id'])
+        with self.request('/api/items/'+result['item_id']) as response:
+            item = json.load(response)
+        self.assertEqual(item['connection_id'], 'freedium')
+        self.assertEqual(item['content_source'], 'freedium')
+        self.assertIn('final paragraph', item['body_html'])
+        self.assertEqual(len(self.app.store.sources()), 1)
+
     def test_graph_endpoint_is_authenticated_filtered_and_uses_local_assets(self):
         from knowledge_fixture import populate
         populate(self.app.store)
@@ -393,7 +425,7 @@ class HTTPTests(unittest.TestCase):
         denied.exception.close()
         with self.request("/api/connections") as response:
             catalogue = json.load(response)["connections"]
-        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium", "substack", "websites"])
+        self.assertEqual([connection["id"] for connection in catalogue], ["youtube", "raindrop", "freedium", "substack", "websites", "medium"])
         self.assertTrue(all(connection["reviewed"] for connection in catalogue))
         first = None
         for _ in range(2):

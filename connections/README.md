@@ -2,7 +2,7 @@
 
 The app owns reading, AI summaries, storage, scheduling, newsletters and EPUB
 delivery. Connections supply content candidates through connection API version 1.
-YouTube, Raindrop, Substack, Websites & blogs and Freedium use that same discovery interface.
+YouTube, Raindrop, Substack, Websites & blogs, Medium and Freedium use that same discovery interface.
 
 The first catalogue is bundled with the app and works offline. Only manifest
 versions listed and hash-pinned in `catalogue.json` are loaded. An unlisted file,
@@ -44,15 +44,53 @@ and preserves its connection identity even after disconnection.
 Adding another reviewed feed definition requires no change to the reader, sidebar,
 connection setup, collection engine or delivery code.
 
-## Freedium v1
+## Freedium: direct reading and optional discovery
+
+Paste a Medium article URL (or a copied Freedium URL) into Freedium's connection
+panel to save its text directly in the Quib27 library. This is a native reading
+flow, not an iframe: the host retrieves the article, extracts its content block
+and sanitizes it. Navigation, scripts, images and tracking widgets are not imported.
+The author, original article link and available publication date are retained.
+The reader labels text supplied through Freedium. Importing needs no AI key and
+does not send email. Existing summary preferences apply when a key is configured.
+
+The authenticated `POST /api/freedium/import` endpoint accepts `{ "url": "..." }`
+and starts the ordinary single-worker import job. Invalid links are rejected
+before queuing. Stable Medium story IDs prevent duplicates across tracking URLs,
+creator feeds, custom article domains, direct imports and older saved Freedium
+links imported from the original service. One-off imports need
+no subscription and can be included in an edition even with no active sources.
 
 Freedium reads `https://freedium-mirror.cfd/rss`, the public Recently Unlocked
 feed. It reads the linked article pages on that same host. No account is needed.
 The feed dates describe recent unlocks and may differ from the original Medium
 publication date. Availability and the latest feed entries depend on Freedium.
 
-This version does not automatically redirect Raindrop links through Freedium.
+This does not automatically redirect Raindrop links through Freedium.
 Reading content for personal use does not transfer its author's ownership.
+
+## Medium creators
+
+The reviewed Medium adapter accepts up to 20 creator handles or profile URLs at
+a time, one per line. `@name`, `medium.com/@name`, `name.medium.com` and their feed
+forms normalize to a single creator subscription. Publication and custom-domain
+profile inputs are not included in this version; use the creator's Medium handle.
+Stories that a followed creator publishes on a custom domain are supported.
+
+Creator RSS discovers articles using the publisher's date and author. Full feed
+content is preferred. An explicit excerpt, member-only article or unreadable page
+tries Freedium automatically; the original author remains the attribution. The
+source permissions and form explain that article URLs are sent to this third
+party. No Medium cookies, login credentials or subscription purchase is involved.
+A missing article or unavailable Freedium response produces a source error and
+is retried on a later refresh. Landing pages are never stored as full stories.
+
+Fetching uses the existing per-source action, preparation limits and laptop
+schedule. It is polling, not a webhook: Quib27 must be running and online. The
+first fetch offers up to three recent posts. Subsequent fetches check all entries
+still present in the bounded creator feed so lookback limits cannot drop a queued
+post. RSS has a finite recent history; this is not an unlimited archive importer.
+Pausing or disconnecting a creator preserves articles already in the library.
 
 ## User-selected publications
 
