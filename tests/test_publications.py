@@ -14,7 +14,7 @@ from desktop.agent import PiSelection
 from desktop.medium import FREEDIUM_ORIGIN, fetch_freedium, freedium_address
 from desktop.publication_browser import PublicationBrowser
 from desktop.publications import (canonical_url, candidate_url, extract_article, page_candidates,
-                                  publication_values, select_articles)
+                                  publication_values, select_articles, checked_article_text)
 from desktop.secrets import Secrets
 from desktop.store import Store, now
 from test_connections import response
@@ -24,7 +24,7 @@ SITE = "https://journal.example/business"
 STORY = "https://journal.example/business/the-patient-investor"
 OTHER = "https://journal.example/business/todays-stock-tips"
 SOURCE_ID = "a" * 32
-TEXT = "Patient investors distinguish long-term company earnings from daily stock price movements. " * 14
+TEXT = "Patient investors distinguish long-term company earnings from daily stock price movements. " * 20
 
 
 def index_page():
@@ -119,6 +119,15 @@ class PublicationReadingTests(unittest.TestCase):
         self.assertEqual(article['content_source'], 'freedium')
         self.assertNotIn('cookies', get.call_args.kwargs)
 
+    def test_mirror_quality_checks_reject_teasers_and_mismatched_articles(self):
+        candidate = page_candidates(index_page(), SITE)[0]
+        valid = {'title': candidate.title, 'body_html': '<p>' + TEXT + '</p>'}
+        self.assertEqual(checked_article_text(valid, candidate), valid)
+        for changes in ({'body_html': '<p>A short teaser only.</p>'}, {'title': 'Untitled'},
+                        {'title': 'A completely unrelated recipe for sourdough bread'}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                checked_article_text({**valid, **changes}, candidate)
+
 
 class PreferenceTests(unittest.TestCase):
     def setUp(self):
@@ -200,13 +209,98 @@ class PublicationEngineTests(unittest.TestCase):
         self.connection.browser = Mock()
         self.connection.browser.request.side_effect = ValueError('Sign-in expired')
         with patch('requests.sessions.Session.request', return_value=response(STORY, story_page(paid=True))), \
-             patch('desktop.publications.fetch_freedium', return_value={'body_html': '<p>'+TEXT+'</p>', 'content_source': 'freedium'}) as mirror:
+             patch('desktop.publications.fetch_freedium', return_value={'title': item.title, 'body_html': '<p>'+TEXT+'</p>', 'content_source': 'freedium'}) as mirror:
             self.assertEqual(self.connection.read_article(item)['content_source'], 'freedium')
             mirror.assert_called_once_with(STORY)
             mirror.reset_mock()
             item = replace(item, detail={**item.detail, 'freedium_fallback': False})
             with self.assertRaisesRegex(ValueError, 'complete article'): self.connection.read_article(item)
             mirror.assert_not_called()
+
+    def test_agent_policy_failure_stops_before_retrieval_and_storage(self):
+        candidates = page_candidates(index_page(), SITE)
+        self.secrets.set('openai_key', 'synthetic-test-key')
+        with patch.object(self.connection, 'discover', return_value=candidates), \
+             patch('desktop.engine.PiSelection.select', side_effect=ValueError('Pi requested a tool outside the publication allowlist')), \
+             patch.object(self.connection, 'read_article') as read:
+            with self.assertRaisesRegex(ValueError, 'publication allowlist'):
+                self.engine.job_prepare(self.store.create_job('prepare'), {'source_id': self.source_id})
+            read.assert_not_called()
+        self.assertEqual(len(self.store.items()), 0)
+        self.assertEqual(len(self.store.editions()), 0)
+        self.assertEqual(self.store.query('SELECT COUNT(*) n FROM deliveries', one=True)['n'], 0)
+
+    def test_only_the_selected_story_reaches_the_host_freedium_retriever(self):
+        self.secrets.set('openai_key', 'synthetic-test-key')
+        candidates = [replace(c, detail={**(c.detail or {}), 'publication_id': self.source_id,
+                                        'freedium_fallback': True}) for c in page_candidates(index_page(), SITE)]
+        self.connection.browser = Mock()
+        self.connection.browser.request.side_effect = ValueError('No subscriber session')
+        extracted = {'title': candidates[0].title, 'url': STORY, 'body_html': '<p>' + TEXT + '</p>',
+                     'content_source': 'freedium', 'content_url': FREEDIUM_ORIGIN + '/' + STORY}
+        with patch.object(self.connection, 'discover', return_value=candidates), \
+             patch('desktop.engine.PiSelection.select', return_value=selection([{'id': '0', 'reason': 'Patient investing'}])), \
+             patch('requests.sessions.Session.request', return_value=response(STORY, story_page(paid=True))), \
+             patch('desktop.publications.fetch_freedium', return_value=extracted) as mirror:
+            result = self.engine.job_prepare(self.store.create_job('prepare'), {'source_id': self.source_id})
+        mirror.assert_called_once_with(STORY)
+        self.assertEqual(result['added'], 1)
+        self.assertEqual(self.store.items()[0]['selection_reason'], 'Patient investing')
+        self.assertEqual(self.store.items()[0]['content_source'], 'freedium')
+        self.assertTrue(self.engine.export_epub(result['edition_id']).is_file())
+        self.assertEqual(self.store.query('SELECT COUNT(*) n FROM deliveries', one=True)['n'], 0)
+
+    def test_medium_feed_excerpt_is_retrieved_before_being_saved_as_reading(self):
+        item = replace(page_candidates(index_page(), SITE)[0], detail={
+            'publication_id': self.source_id, 'freedium_fallback': True,
+            'feed_html': '<p class="medium-feed-snippet">' + TEXT + '</p>'})
+        self.connection.browser = Mock()
+        self.connection.browser.request.side_effect = ValueError('No subscriber session')
+        with patch('requests.sessions.Session.request', return_value=response(STORY, story_page(paid=True))), \
+             patch('desktop.publications.fetch_freedium', return_value={'title': item.title, 'body_html': '<p>' + TEXT + '</p>',
+                                                                       'content_source': 'freedium'}) as mirror:
+            article = self.connection.read_article(item)
+        mirror.assert_called_once_with(STORY)
+        self.assertEqual(article['content_source'], 'freedium')
+
+    def test_freedium_cannot_replace_a_known_publication_date_with_its_display_date(self):
+        item = replace(page_candidates(index_page(), SITE)[0], detail={
+            'publication_id': self.source_id, 'freedium_fallback': True, 'date_known': True})
+        self.connection.browser = Mock()
+        self.connection.browser.request.side_effect = ValueError('No subscriber session')
+        with patch('requests.sessions.Session.request', return_value=response(STORY, story_page(paid=True))), \
+             patch('desktop.publications.fetch_freedium', return_value={'title': item.title, 'body_html': '<p>' + TEXT + '</p>',
+                 'content_source': 'freedium', 'published': '2026-11-22T00:00:00+00:00'}):
+            article = self.connection.read_article(item)
+        self.assertEqual(article['published'], item.published)
+
+    def test_short_generic_rss_content_is_not_treated_as_a_complete_article(self):
+        candidate = page_candidates(index_page(), SITE)[0]
+        item = replace(candidate, detail={'publication_id': self.source_id,
+                                         'feed_html': '<p>' + ('A short RSS teaser. ' * 15) + '</p>'})
+        self.connection.browser = Mock()
+        public_page = story_page().replace(b'"isAccessibleForFree":false', b'"isAccessibleForFree":true')
+        public_page = public_page.replace(b'<title>The patient investor</title>', ('<title>' + candidate.title + '</title>').encode())
+        with patch('requests.sessions.Session.request', return_value=response(STORY, public_page)):
+            article = self.connection.read_article(item)
+        self.assertIn('final paragraph', article['body_html'])
+        self.assertNotIn('RSS teaser', article['body_html'])
+        self.connection.browser.request.assert_not_called()
+
+    def test_short_public_page_continues_to_freedium_instead_of_saving_a_teaser(self):
+        candidate = page_candidates(index_page(), SITE)[0]
+        item = replace(candidate, detail={'publication_id': self.source_id, 'freedium_fallback': True})
+        self.connection.browser = Mock()
+        self.connection.browser.request.side_effect = ValueError('No session')
+        page = story_page().replace(b'"isAccessibleForFree":false', b'"isAccessibleForFree":true')
+        short = {'title': candidate.title, 'body_html': '<p>' + ('A readable-looking teaser. ' * 18) + '</p>'}
+        complete = {'title': candidate.title, 'body_html': '<p>' + TEXT + '</p>', 'content_source': 'freedium'}
+        with patch('requests.sessions.Session.request', return_value=response(STORY, page)), \
+             patch('desktop.publications.extract_article', return_value=short), \
+             patch('desktop.publications.fetch_freedium', return_value=complete) as mirror:
+            article = self.connection.read_article(item)
+        mirror.assert_called_once_with(STORY)
+        self.assertEqual(article['content_source'], 'freedium')
 
     def test_signin_saves_only_session_status_and_uses_own_publication_id(self):
         browser = Mock()
@@ -237,12 +331,44 @@ class PiBridgeTests(unittest.TestCase):
             (bridge.folder/'runtime/node').touch()
             (bridge.folder/'dist').mkdir()
             (bridge.folder/'dist/reader-agent.mjs').touch()
-            process = Mock(returncode=0, stdout=json.dumps({'selected': [], 'runtime': 'pi-agent-core'}))
+            process = Mock(returncode=0, stdout=json.dumps({'selected': [], 'runtime': 'pi-agent-core',
+                                                          'tools_used': [], 'model_turns': 0}))
             with patch('subprocess.run', return_value=process) as run:
                 bridge.select({'articles': [], 'preferences': 'Gardening', 'maximum': 1},
                               provider='openai', model='test-model', key='synthetic-private-key')
             self.assertNotIn('synthetic-private-key', ' '.join(run.call_args.args[0]))
             self.assertEqual(json.loads(run.call_args.kwargs['input'])['api_key'], 'synthetic-private-key')
+
+    def test_host_rejects_unexpected_tools_or_excess_model_turns(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bridge = PiSelection()
+            bridge.folder = Path(temporary)
+            (bridge.folder/'runtime').mkdir()
+            (bridge.folder/'runtime/node').touch()
+            (bridge.folder/'dist').mkdir()
+            (bridge.folder/'dist/reader-agent.mjs').touch()
+            result = {'selected': [], 'runtime': 'pi-agent-core',
+                      'tools_used': ['list_articles', 'select_articles'], 'model_turns': 2}
+            for changes in ({'tools_used': ['browse', 'select_articles']}, {'tools_used': ['list_articles']},
+                            {'model_turns': 4}, {'model_turns': True}, {'runtime': 'another-agent'}):
+                process = Mock(returncode=0, stdout=json.dumps({**result, **changes}))
+                with self.subTest(changes=changes), patch('subprocess.run', return_value=process), \
+                     self.assertRaisesRegex(ValueError, 'restricted article-selection protocol'):
+                    bridge.select({'articles': [{'id': '0'}], 'preferences': 'Investing', 'maximum': 1},
+                                  provider='openai', model='test-model', key='synthetic-test-key')
+
+    def test_provider_error_cannot_echo_the_api_key(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bridge = PiSelection()
+            bridge.folder = Path(temporary)
+            (bridge.folder/'runtime').mkdir()
+            (bridge.folder/'runtime/node').touch()
+            (bridge.folder/'dist').mkdir()
+            (bridge.folder/'dist/reader-agent.mjs').touch()
+            process = Mock(returncode=1, stdout=json.dumps({'error': 'Bad key synthetic-private-key'}))
+            with patch('subprocess.run', return_value=process), self.assertRaises(ValueError) as error:
+                bridge.select({}, provider='openai', model='test-model', key='synthetic-private-key')
+            self.assertNotIn('synthetic-private-key', str(error.exception))
 
     def test_missing_pi_build_is_reported_instead_of_silently_using_another_runtime(self):
         with tempfile.TemporaryDirectory() as temporary:

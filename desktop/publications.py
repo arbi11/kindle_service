@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+from difflib import SequenceMatcher
 import hashlib
 import json
 import re
@@ -13,10 +14,28 @@ import requests
 from connection_sdk import Candidate, MAX_FEED_BYTES, iso_date, parse_feed
 from .content import plain_text
 from .feeds import PublicFeedHTTP, Subscription, feed_info, feed_root, public_url, paid_preview
-from .medium import clean_body, fetch_freedium
+from .medium import clean_body, fetch_freedium, feed_is_preview
 from .store import now
 
 MAX_CANDIDATES = 40
+
+
+def checked_article_text(article, candidate, *, provider="Publication"):
+    """Apply the same conservative readability checks used in the live audit."""
+    text = plain_text(article.get("body_html", ""))
+    title = article.get("title", "").strip()
+    if not title or title.casefold() == "untitled":
+        raise ValueError(provider + " returned an article without a usable title")
+    if len(text.split()) < 200:
+        raise ValueError(provider + " returned less than 200 words; the text needs review before import")
+    def tokens(value):
+        value = re.sub(r"\s+[|—–-]\s+(?:The )?(?:New York Times|NYT|Washington Post|Bloomberg|Reuters|Economist|Financial Times|Medium|The Athletic|Quora|Barron.s).*$", "", value, flags=re.I)
+        return re.findall(r"\w+", value.casefold())
+    expected, returned = tokens(candidate.title), tokens(title)
+    overlap = len(set(expected) & set(returned)) / max(1, min(len(set(expected)), len(set(returned))))
+    if overlap < .45 and SequenceMatcher(None, " ".join(expected), " ".join(returned)).ratio() < .55:
+        raise ValueError(provider + " returned a different headline; the text needs review before import")
+    return article
 
 
 def canonical_url(value):
@@ -193,7 +212,7 @@ class Publications(Subscription):
         errors = []
         # A full feed body can already contain all the subscriber's reading.
         body = detail.get("feed_html", "")
-        if body and len(plain_text(body)) >= 200 and not paid_preview(body):
+        if body and len(plain_text(body).split()) >= 200 and not feed_is_preview(body):
             return {"body_html": clean_body(body, candidate.url), "title": candidate.title,
                     "author": candidate.author, "url": candidate.url,
                     "content_source": "publisher", "content_url": candidate.url}
@@ -202,19 +221,26 @@ class Publications(Subscription):
             from .feeds import page_is_paid
             if page_is_paid(page.content):
                 raise ValueError("Subscriber access is needed")
-            return extract_article(page.content, candidate.url, candidate.title, candidate.author)
+            return checked_article_text(extract_article(page.content, candidate.url, candidate.title, candidate.author),
+                                        candidate, provider="Publisher")
         except (requests.RequestException, ValueError) as exc:
             errors.append(str(exc))
         try:
             page = self.browser.request(detail["publication_id"], candidate.url)
-            return extract_article(page["html"].encode(), candidate.url, candidate.title, candidate.author, authenticated=True)
+            return checked_article_text(extract_article(page["html"].encode(), candidate.url, candidate.title,
+                                                       candidate.author, authenticated=True), candidate, provider="Publication browser")
         except ValueError as exc:
             errors.append(str(exc))
         if detail.get("freedium_fallback", True):
             try:
-                return fetch_freedium(candidate.url)
-            except ValueError:
-                errors.append("Freedium did not return this article")
+                article = checked_article_text(fetch_freedium(candidate.url), candidate, provider="Freedium")
+                # Some mirror headers show retrieval time. Prefer the date from
+                # the publication's own feed or dated index when it is known.
+                if candidate.published and detail.get("date_known") is not False:
+                    article = {**article, "published": candidate.published}
+                return article
+            except ValueError as exc:
+                errors.append(str(exc))
         raise ValueError("Could not read the complete article. Use Sign in / reconnect or try another article. " + "; ".join(errors[-2:]))
 
 

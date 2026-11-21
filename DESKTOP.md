@@ -43,7 +43,7 @@ reviewed index. Custom executable adapters require reviewed app code and a relea
 See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
 to validate the catalogue. The core app's copyright terms are unchanged.
 
-## Publications prototype (v0.2.8)
+## Publications prototype (v0.2.9)
 
 The right Connections panel now includes Publications. Add a publication or section
 URL, describe what to read (and exclude), set an article limit, and choose whether
@@ -55,8 +55,24 @@ Written preferences use the bundled Pi agent runtime and your configured AI key.
 Pi lists candidates and selects matching IDs with reasons; no matches is a valid
 result. Blank preferences fetch recent articles without AI selection. OpenAI agent
 calls use Responses; existing summarization behavior stays under Settings.
+
+Pi has exactly two tools: `list_articles` exposes only the candidate metadata
+already collected by Quib27, and `select_articles` returns supplied IDs and reasons.
+The runtime enforces one call to each tool, in that order, with at most 40
+candidates, 10 selections, three model turns and 90 seconds per selection run. Invalid IDs,
+unknown tools, repeated calls and oversized batches stop the run before retrieval.
+The Python host also checks the completed tool sequence before accepting a result.
+Full article bodies, cookies, passwords and the API key are not included in the model's
+selection transcript. Shell, filesystem, browser, login, MCP and delivery tools
+are not registered with Pi.
+
 The host retrieves article text from the feed/public page, the local saved browser
 session, or optional Freedium. Each publication has a separate local profile.
+Short RSS content is fetched from the original page instead of being treated as
+a complete article. Publications accepts extracted text only when it has a matching
+headline and at least 200 words, as in the seven-day readability audit. Short or
+mismatched results are reported for review. A known feed/index publication date
+takes precedence over Freedium's displayed date.
 Profiles currently have owner-only access without an added encryption layer.
 Real subscriber logins, two-factor flows and site layouts can vary.
 
@@ -64,6 +80,14 @@ Freedium's direct import accepts original publication URLs as well as Medium lin
 Availability depends on Freedium; unsupported pages are not saved as full articles.
 No sending or scheduling is enabled by adding a publication. Existing reading and
 Kindle services remain independent.
+
+Public feed examples for preference-based selection include Bloomberg Markets
+(`https://feeds.bloomberg.com/markets/news.rss`), NYT
+(`https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml`) and Washington Post
+Business (`https://feeds.washingtonpost.com/rss/business`). Add one in Publications
+and enter your topics and exclusions. Feed discovery and full-text availability
+are separate steps; an unavailable story is reported rather than delegated to an
+unrestricted browsing agent.
 
 For a development checkout, run `python build_agent.py` once before testing written
 preferences. This builds pinned Pi packages and a private Node runtime; desktop

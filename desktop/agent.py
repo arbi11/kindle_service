@@ -27,7 +27,14 @@ class PiSelection:
             if not isinstance(data, dict):
                 raise ValueError("Pi returned an invalid article selection")
             if result.returncode or data.get("error"):
-                raise ValueError(str(data.get("error") or "Pi could not select articles")[:700])
+                message = str(data.get("error") or "Pi could not select articles")
+                raise ValueError(message.replace(key, "[credential hidden]")[:700] if key else message[:700])
+            expected = ["list_articles", "select_articles"] if request.get("articles") else []
+            turns = data.get("model_turns")
+            if (data.get("runtime") != "pi-agent-core" or data.get("tools_used") != expected
+                    or type(turns) is not int or not (1 <= turns <= 3 if expected else turns == 0)
+                    or not isinstance(data.get("selected"), list)):
+                raise ValueError("Pi did not follow the restricted article-selection protocol. Nothing was retrieved.")
             return data
         except subprocess.TimeoutExpired:
             raise ValueError("Pi article selection timed out. Try again with a shorter preference.") from None
