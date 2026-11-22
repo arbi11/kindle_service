@@ -1,0 +1,55 @@
+/* Destinations on the left, content in the middle, collection setup on the right. */
+.workspace-shell .digest-brand { margin-bottom: 33px; }
+.workspace-shell .story-filters { padding-top: 23px; margin-top: 26px; }
+.workspace-shell .story-filters label { display: block; }
+.workspace-shell .story-filters select {
+  display: block; width: 100%; min-width: 0; padding: 10px 9px;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+  border-radius: 6px; font: 12px var(--sans); cursor: pointer;
+}
+.workspace-shell .sidebar-utilities {
+  display: flex; align-items: center; gap: 4px; margin-top: auto;
+  padding-top: 24px; border-top: 0;
+}
+.sidebar-settings { display: flex; align-items: center; gap: 12px; flex: 1; padding: 12px; font: 13px var(--sans); text-align: left; background: transparent; color: var(--muted); border-radius: 7px; }
+.sidebar-settings svg { width: 19px; height: 19px; }
+.sidebar-settings:hover,.sidebar-settings.active { background: var(--pale); color: var(--ink); }
+.sidebar-utilities .icon-btn { flex-shrink: 0; }
+.reading-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.reading-view-bar .section-tabs { border: 0; margin: 0; }
+.section-tabs { margin-bottom: 27px; }
+.reading-view-bar > .text-btn { font-size: 12px; white-space: nowrap; }
+.workspace-shell .reading-tools { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+.reading-tools .tabs { border: 0; margin: 0; padding: 0; }
+.reading-tools .tabs button { font-size: 11px; padding: 7px 9px; white-space: nowrap; }
+.reading-tools .search-wrap { flex: 1 1 180px; min-width: 150px; max-width: 260px; }
+.reading-tools .search-wrap input { width: 100%; font-size: 12px; }
+.workspace-shell .digest-toolbar { min-height: 31px; padding-bottom: 13px; }
+.workspace-shell .reading-editions { margin-top: 4px; border-top: 0; padding-top: 0; }
+.reading-editions .section-heading { align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+.reading-editions .section-note { font-size: 12px; margin-top: 8px; padding: 0; background: transparent; color: var(--muted); border: 0; }
+.reading-editions .archive-row { gap: 18px; }
+.reading-editions .archive-row h3 { font-size: 20px; }
+.knowledge-scope { color: var(--muted); font-size: 12px; margin: 0 0 18px; }
+.workspace-shell .graph-filters { grid-template-columns: minmax(135px,1fr) minmax(135px,1fr) auto auto; }
+.workspace-shell .knowledge-intro { margin-top: 0; }
+.about-card dl { display: grid; grid-template-columns: 80px minmax(0,1fr); gap: 14px 20px; font-size: 13px; margin: 22px 0 28px; }
+.about-card dt { color: var(--muted); }
+.about-card dd { margin: 0; color: var(--ink); }
+.about-card .data-location { overflow-wrap: anywhere; line-height: 1.6; }
+
+@media(max-width:1150px) {
+  .workspace-shell .reading-tools .search-wrap { max-width: none; }
+  .workspace-shell .graph-filters { grid-template-columns: minmax(120px,1fr) minmax(120px,1fr); }
+  .workspace-shell .graph-filters .text-btn { justify-self: start; }
+}
+@media(max-width:650px) {
+  .workspace-shell .sidebar-utilities { flex-direction: column; display: flex; }
+  .workspace-shell .sidebar-settings { flex: none; padding: 10px; }
+  .workspace-shell .sidebar-settings span { display: none; }
+  .workspace-shell .story-filters { padding-top: 18px; }
+  .workspace-shell .story-filters label { font-size: 0; margin: 0; }
+  .workspace-shell .story-filters select { padding: 9px 0; font-size: 11px; }
+  .reading-view-bar { flex-wrap: wrap; }
+  .reading-tools .search-wrap { max-width: none; flex-basis: 100%; }
+}

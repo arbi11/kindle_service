@@ -115,6 +115,7 @@ class Application:
         return {"version": __version__, "settings": settings, "secrets": self.secrets.status(),
                 "catalogue": self.engine.catalogue.public(sources),
                 "sources": sources, "editions": editions, "stats": stats,
+                "reading_connections": self.store.connection_counts(),
                 "jobs": self.store.query("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 8"),
                 "deliveries": self.store.query("SELECT d.*,e.title AS edition_title FROM deliveries d LEFT JOIN editions e ON e.id=d.edition_id ORDER BY d.created_at DESC LIMIT 30"),
                 "next_run": min(slots).isoformat() if slots and settings["schedule_enabled"] else None,
@@ -247,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.headers_common("text/html; charset=utf-8", len(payload), {"Content-Disposition": 'attachment; filename="Daily-Edition.html"'})
                     self.wfile.write(payload)
             else:
-                assets = {"/": "index.html", "/app.css": "app.css", "/theme.css": "theme.css", "/app.js": "app.js", "/icon.svg": "icon.svg",
+                assets = {"/": "index.html", "/app.css": "app.css", "/theme.css": "theme.css", "/workspace.css": "workspace.css", "/app.js": "app.js", "/icon.svg": "icon.svg",
                           "/knowledge-graph.js": "knowledge-graph.js",
                           "/vendor/vis-network.min.js": "vendor/vis-network/vis-network.min.js"}
                 if path not in assets:

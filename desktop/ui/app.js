@@ -37,17 +37,19 @@ const icons = {
   graph:'<circle cx="5" cy="6" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="18" r="2"/><path d="m7 6 9-1M6 8l5 8m6-9-4 9"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
-let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
+let state = null, items = [], view = 'reading', currentItem = null, currentEdition = null;
 let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme = document.documentElement.dataset.theme || 'light';
-let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
+let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'reading';
 let refreshEpoch = 0;
 let activeJob = null, knownJobIds = new Set(), searchTimer;
-let digestConnection = 'all', readerReturnItemId = null, readerReturnScroll = 0;
+let connectionScope = 'all', readerReturnItemId = null, readerReturnScroll = 0;
 let connectionsTab = 'yours';
 let expandedConnection = null, connectionRailScroll = 0;
 const connectionDrafts = new Map();
 let raindropCollections = [];
-let knowledge = null, libraryMode = 'reading', knowledgeTopic = null, knowledgeConcept = null, knowledgeQuery = '';
+let knowledge = null, readingMode = 'stories', knowledgeMode = 'graph', settingsSection = 'preferences';
+let knowledgeTopic = null, knowledgeConcept = null, knowledgeQuery = '';
+const settingsDrafts = new Map();
 let readerCitation = null, readerReturnFocus = null;
 let themeSaving = false;
 const dialog = $('#modal');
@@ -62,6 +64,7 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme=readerTheme;
   $('meta[name="color-scheme"]').content=readerTheme==='dark'?'dark':'light';
   if(state) state.settings.reader_theme=readerTheme;
+  if(settingsDrafts.has('settings-form')) settingsDrafts.get('settings-form').reader_theme=readerTheme;
   try {localStorage.setItem('readerTheme',readerTheme);} catch {}
   const shell=$('.reader-shell');
   if(shell) {shell.classList.remove('light','dark','sepia');shell.classList.add(readerTheme);}
@@ -99,11 +102,10 @@ const shortDate = value => value ? new Date(value).toLocaleDateString(undefined,
 const timeOf = value => value ? new Date(value).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',timeZone:state?.settings.timezone}) : '';
 const excerpt = item => item.takeaway || (new DOMParser()).parseFromString(item.summary_html || item.body_html,'text/html').body.textContent.slice(0,210);
 const sample = item => item.is_sample ? '<span class="sample-tag">SAMPLE</span>' : '';
-const latestEdition = () => state.editions.find(e => !e.is_sample) || state.editions[0];
 
 async function refresh(renderPage=true) {
   const epoch=++refreshEpoch;
-  const query = {...filters, limit:200};
+  const query = {...(view==='reading'&&readingMode==='stories'?filters:{kind:'all',status:'all',q:''}), limit:200};
   const [data, library] = await Promise.all([api('/bootstrap'), api('/items?' + new URLSearchParams(query))]);
   const allItems = library.items;
   let page = library;
@@ -117,50 +119,70 @@ async function refresh(renderPage=true) {
   if(!themeSaving) applyTheme(state.settings.reader_theme);
   if (renderPage) render();
 }
-function navigation(next) {
-  view = next; currentItem = null; currentEdition = null;
-  if (next !== 'library') filters = {kind:'all',status:'all',q:''};
-  window.scrollTo(0,0); refresh().catch(e => toast(e.message,true));
+async function navigation(next) {
+  clearTimeout(searchTimer);
+  captureSettingsDraft();
+  if(next==='delivery') {next='settings';settingsSection='delivery';}
+  view=next;currentItem=null;currentEdition=null;
+  if(next==='reading') readingMode='stories';
+  window.scrollTo(0,0);
+  try {await refresh();} catch(error) {toast(error.message,true);}
 }
-function connectionFilterButtons() {
-  const connections = [['all','layers','All connections'], ...(state.catalogue || [])
-    .filter(connection => connection.source_count || items.some(item => itemConnection(item) === connection.id))
-    .map(connection => [connection.id,connection.icon,connection.name])];
-  return connections.map(([id,i,title]) => `<button data-connection="${id}" aria-label="${title}" class="${digestConnection===id?'active':''}" aria-pressed="${digestConnection===id}">${icon(i)}<span>${title}</span></button>`).join('');
+function connectionName(id) {
+  return id==='all'?'All connections':state.catalogue?.find(c=>c.id===id)?.name || (id==='article'?'Saved articles':id==='other'?'Other reading':id);
+}
+function connectionFilter() {
+  const ids=Object.keys(state.reading_connections || {});
+  const ordered=(state.catalogue||[]).filter(c=>ids.includes(c.id)).map(c=>c.id);
+  ordered.push(...ids.filter(id=>!ordered.includes(id)).sort());
+  if(connectionScope!=='all'&&!ordered.includes(connectionScope)) ordered.push(connectionScope);
+  return `<div class="story-filters"><label class="nav-label" for="story-connection">Filter stories</label>
+    <select id="story-connection" aria-label="Filter stories by connection">${['all',...ordered].map(id=>`<option value="${esc(id)}" ${connectionScope===id?'selected':''}>${esc(connectionName(id))}</option>`).join('')}</select></div>`;
+}
+function setConnectionScope(id) {
+  connectionScope=id;KnowledgeGraph.scopeChanged();
+}
+function modeTabs(action,label,options,selected) {
+  return `<div class="tabs section-tabs" role="group" aria-label="${label}">${options.map(([id,title])=>`<button type="button" data-action="${action}" data-value="${id}" class="${selected===id?'active':''}" aria-pressed="${selected===id}">${title}</button>`).join('')}</div>`;
+}
+function captureSettingsDraft() {
+  const form=$('#settings-form')||$('#delivery-form');
+  if(form) settingsDrafts.set(form.id,readForm(form));
+}
+function restoreSettingsDraft() {
+  const form=$('#settings-form')||$('#delivery-form'), values=form&&settingsDrafts.get(form.id);
+  if(values) for(const element of form.elements) if(element.name in values) {
+    if(element.type==='checkbox') element.checked=values[element.name];else element.value=values[element.name];
+  }
 }
 function render() {
   if (!state) return;
   if (currentItem) { renderReader(); return; }
   KnowledgeGraph.unmount();
   captureConnectionDraft();
-  const pages = [['today','home','Today'],['library','book','Library'],['knowledge','graph','Knowledge graph'],['sources','layers','Sources'],['delivery','mail','Delivery'],['settings','settings','Settings']];
-  const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,knowledge:KnowledgeGraph.page,sources:sourcesPage,delivery:deliveryPage,settings:settingsPage}[view] || todayPage)();
+  const pages = [['reading','book','Reading'],['knowledge','graph','Knowledge']];
+  const page = currentEdition ? editionPage() : ({reading:readingPage,knowledge:knowledgePage,connections:connectionsPage,settings:settingsPage}[view] || readingPage)();
   $('#app').innerHTML = `
-    <div class="shell digest-shell ${!currentEdition&&(view==='knowledge'||view==='library'&&libraryMode==='knowledge')?'knowledge-shell':''}">
+    <div class="shell digest-shell workspace-shell ${!currentEdition&&view==='knowledge'?'knowledge-shell':''}">
       <aside class="sidebar">
         <div class="digest-brand"><img class="brand-mark" src="/icon.svg" width="36" height="36" alt=""><span class="brand-name">Quib27</span></div>
-        <div class="nav-label" id="reading-room-label">Your reading room</div>
-        <nav class="nav primary-nav" aria-labelledby="reading-room-label">
-          ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span>${id==='library'&&state.stats.unread?`<span class="badge">${state.stats.unread}</span>`:''}</button>`).join('')}
+        <nav class="nav primary-nav" aria-label="Main navigation">
+          ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
         </nav>
-        <div class="story-filters">
-        <div class="nav-label" id="story-filters-label">Filter stories</div>
-        <nav class="nav connection-nav" aria-labelledby="story-filters-label">
-          ${connectionFilterButtons()}
-        </nav>
-        </div>
-        <div class="sidebar-foot">
-          ${themeButton()}
-          <div class="version"><span class="local-pill"><i class="dot"></i> On this device</span><span>v${esc(state.version)}</span></div>
+        ${!currentEdition&&(view==='knowledge'||view==='reading'&&readingMode==='stories')?connectionFilter():''}
+        <div class="sidebar-foot sidebar-utilities">
+          <button class="sidebar-settings ${view==='settings'?'active':''}" data-nav="settings" aria-label="Settings" ${view==='settings'?'aria-current="page"':''}>${icon('settings')}<span>Settings</span></button>
+          ${themeButton(true)}
         </div>
       </aside>
       <div class="workspace"><main class="main" id="main-content">${page}</main>${connectionsRail()}</div>
     </div>`;
   restoreConnectionDraft();
+  restoreSettingsDraft();
   updateTask();
-  if(view==='knowledge'&&!currentEdition) KnowledgeGraph.mount();
+  if(view==='knowledge'&&knowledgeMode==='graph'&&!currentEdition) KnowledgeGraph.mount();
 }
-function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1><p class="page-subtitle">${subtitle}</p></div>${action}</div>`; }
+function heading(title, subtitle, action='') { return `<div class="page-heading"><div><h1 class="page-title">${title}</h1>${subtitle?`<p class="page-subtitle">${subtitle}</p>`:''}</div>${action}</div>`; }
 function empty(title, text, button='', i='book') { return `<div class="empty"><div class="empty-icon">${icon(i)}</div><h2>${title}</h2><p>${text}</p>${button}</div>`; }
 function contentAttribution(item) {
   if(item.content_source==='public_copy' && item.content_url) {
@@ -180,9 +202,9 @@ function itemConnection(item) {
   if (source) return source.kind;
   if (item.kind === 'video') return 'youtube';
   // Offline examples demonstrate the two connections without connecting an account.
-  return item.is_sample ? 'raindrop' : null;
+  return item.is_sample ? 'raindrop' : 'other';
 }
-function connectionItems() { return items.filter(item => digestConnection === 'all' || itemConnection(item) === digestConnection); }
+function connectionItems() { return items.filter(item => connectionScope === 'all' || itemConnection(item) === connectionScope); }
 function digestItems() {
   return connectionItems()
     .sort((a,b) => (Date.parse(b.published) || Date.parse(b.created_at) || 0) - (Date.parse(a.published) || Date.parse(a.created_at) || 0));
@@ -239,7 +261,7 @@ function connectionPanel(connection) {
   </section>`;
 }
 function connectionsRail() {
-  return `<aside class="connection-rail" aria-labelledby="connection-rail-title"><header class="connection-rail-heading"><h2 id="connection-rail-title">Connections</h2><p>Select one to view its settings.</p></header><div class="rail-connections">${(state.catalogue || []).map(connectionPanel).join('')}</div><button class="text-btn catalogue-link" data-nav="sources">Browse connections ${icon('arrow')}</button></aside>`;
+  return `<aside class="connection-rail" aria-labelledby="connection-rail-title"><header class="connection-rail-heading"><h2 id="connection-rail-title">Connections</h2><p>Select one to view its settings.</p></header><div class="rail-connections">${(state.catalogue || []).map(connectionPanel).join('')}</div><button class="text-btn catalogue-link" data-nav="connections">Manage connections ${icon('arrow')}</button></aside>`;
 }
 function renderConnectionRail() {
   if (!$('.connection-rail')) return;
@@ -247,48 +269,50 @@ function renderConnectionRail() {
 }
 async function refreshConnections() {
   await refresh(false);
-  if(['settings','delivery'].includes(view)&&!currentItem) {
-    $('.connection-nav').innerHTML=connectionFilterButtons();renderConnectionRail();
+  if(view==='settings'&&!currentItem) {
+    renderConnectionRail();
   } else render();
 }
-function todayPage() {
-  const date = new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
-  const articles = digestItems();
-  const connection = digestConnection==='all'?'All connections':state.catalogue?.find(c => c.id === digestConnection)?.name || 'Saved articles';
-  return `<div class="digest-layout">
-    <section class="digest-feed" aria-labelledby="digest-title">
-      <header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1 id="digest-title">The Daily Quib</h1></header>
-      <div class="digest-toolbar"><div class="digest-context"><span>${connection}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'article':'articles'}</span></div><label class="digest-sort" for="digest-sort"><span>Sort by</span><select id="digest-sort"><option value="recent">Most recent</option><option value="relevant" disabled>Most relevant</option></select></label></div>
-      <div class="digest-list">${articles.map(digestArticle).join('') || `<div class="digest-empty"><h2>No articles here yet</h2><p>${digestConnection==='all'?'Articles from your connections will appear here.':`Articles from ${connection} will appear here.`}</p></div>`}</div>
-    </section>
-  </div>`;
+function readingPage() {
+  const date=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
+  const tabs=modeTabs('reading-mode','Reading views',[['stories','Stories'],['editions','Editions']],readingMode);
+  const content=readingMode==='editions'?editionsPage():storiesPage();
+  return `<div class="digest-layout"><header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1>The Daily Quib</h1></header>
+    <div class="reading-view-bar">${tabs}${readingMode==='stories'?`<button class="text-btn" data-action="add-article">${icon('plus')} Add article</button>`:''}</div>${content}</div>`;
 }
-function libraryPage() {
-  if(libraryMode==='knowledge' && knowledge?.available) return knowledgePage();
-  const items = connectionItems();
-  return heading('Your library.','A good place for everything you’ve been meaning to read.',`<div class="inline-actions"><button class="btn secondary" data-action="upload">${icon('download')} Import EPUB</button><button class="btn" data-action="prepare">${icon('plus')} Prepare edition</button></div>`) + libraryModes() + `<div class="library-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Find something good…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>${items.length?`<div class="library-grid">${items.map(item=>`<article class="reading-card" data-action="read" data-id="${item.id}" tabindex="0" role="button" aria-label="Read ${esc(item.title)}"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author)} ${sample(item)}</div><h3>${esc(item.title)}</h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?icon('check'):''}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`).join('')}</div>`:empty('A little space for something good.',filters.q?'No pieces match your search. Try another title or source.':filters.status==='saved'?'Use the bookmark button on a piece to save it here.':'Add your sources and prepare your first edition.','<button class="btn secondary" data-nav="sources">Choose sources</button>')}<section class="edition-archive"><div class="section-heading"><h2>Your editions</h2><span class="mini muted">A reading routine, one edition at a time.</span></div>${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} pieces · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')}</section>`;
+function storiesPage() {
+  const articles=digestItems();
+  return `<section class="digest-feed" aria-label="Stories">
+    <div class="library-tools reading-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Search stories…" value="${esc(filters.q)}" aria-label="Search your reading"></div></div>
+    <div class="digest-toolbar"><div class="digest-context"><span>${esc(connectionName(connectionScope))}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'story':'stories'}</span></div><span>Most recent</span></div>
+    <div class="digest-list">${articles.map(digestArticle).join('')||`<div class="digest-empty"><h2>No matching stories</h2><p>${filters.q||filters.kind!=='all'||filters.status!=='all'?'Try another search or reading filter.':connectionScope==='all'?'Articles from your connections will appear here.':'No stories from this connection yet.'}</p></div>`}</div></section>`;
 }
-function libraryModes() {
-  if(!knowledge?.available) return '';
-  return `<div class="tabs library-modes" role="group" aria-label="Library view">${[['reading','Reading'],['knowledge','Knowledge']].map(([id,title])=>`<button data-action="library-mode" data-value="${id}" class="${libraryMode===id?'active':''}" aria-pressed="${libraryMode===id}">${title}${id==='knowledge'?'<span class="knowledge-pilot-label">Pilot</span>':''}</button>`).join('')}</div>`;
+function editionsPage() {
+  return `<section class="edition-archive reading-editions"><div class="section-heading"><div><h2>Your editions</h2><p class="section-note">Saved reading editions for the app, email or Kindle.</p></div><div class="inline-actions"><button class="btn secondary small" data-action="upload">${icon('download')} Import EPUB</button><button class="btn secondary small" data-action="prepare">${icon('plus')} Prepare edition</button></div></div>
+    ${state.editions.map(e=>`<div class="archive-row"><div><h3>${esc(e.title)}</h3><p>${e.item_count} ${e.item_count===1?'piece':'pieces'} · ${minutes(e.words)} min read · ${shortDate(e.created_at)} ${e.is_sample?'· Sample':''}</p></div><div class="archive-actions"><button class="btn secondary small" data-action="edition" data-id="${e.id}">Open ${icon('arrow')}</button><a class="icon-btn" href="/api/editions/${e.id}/epub" aria-label="Export ${esc(e.title)}">${icon('download')}</a></div></div>`).join('')||'<p class="intro-line">Prepare an edition from your connections or import an EPUB.</p>'}</section>`;
+}
+function knowledgePage() {
+  const options=[['graph','Graph'],['concepts','Concepts']];
+  return heading('Knowledge','Explore your reading and the ideas it connects.')+modeTabs('knowledge-mode','Knowledge views',options,knowledgeMode)+(knowledgeMode==='graph'?KnowledgeGraph.page():conceptsPage());
 }
 function knowledgeScope() {
-  const citations = new Map((knowledge.citations||[]).filter(c=>digestConnection==='all'||c.connection_id===digestConnection).map(c=>[c.id,c]));
+  const citations = new Map((knowledge.citations||[]).filter(c=>connectionScope==='all'||c.connection_id===connectionScope).map(c=>[c.id,c]));
   const insights = new Map((knowledge.insights||[]).filter(i=>i.citation_ids.some(id=>citations.has(id))).map(i=>[i.id,i]));
   const concepts = (knowledge.concepts||[]).filter(c=>c.insight_ids.some(id=>insights.has(id)));
   const topics = (knowledge.topics||[]).filter(t=>t.concept_ids.some(id=>concepts.some(c=>c.id===id)));
   return {citations,insights,concepts,topics};
 }
-function knowledgePage() {
-  let result = heading('Your library.','Reading, and the ideas you take from it.') + libraryModes();
+function conceptsPage() {
+  let result='';
+  if(!knowledge?.available) return empty('No mapped concepts yet.','The graph still shows your saved readings. Concept browsing uses the existing local knowledge pilot.');
   if(knowledge.error) return result + empty('The knowledge pilot needs a moment.',esc(knowledge.error));
   const scoped = knowledgeScope();
   const topic = scoped.topics.find(t=>t.id===knowledgeTopic);
   const concept = scoped.concepts.find(c=>c.id===knowledgeConcept&&(!topic||topic.concept_ids.includes(c.id)));
-  const connection = digestConnection==='all'?'All connections':state.catalogue?.find(c=>c.id===digestConnection)?.name||'Saved reading';
+  const connection = connectionScope==='all'?'All connections':state.catalogue?.find(c=>c.id===connectionScope)?.name||'Saved reading';
   const covered = new Set(Array.from(scoped.citations.values()).map(c=>c.item_id)).size;
-  const coverage = digestConnection==='all'?`Pilot: ${knowledge.stats.readings} of ${knowledge.stats.library} saved pieces`:`Showing ${covered} of ${knowledge.stats.readings} pilot pieces`;
-  result += `<section class="knowledge-view"><div class="knowledge-intro"><h2>Knowledge</h2><p>Explore topics, follow a concept, then check the passages behind each suggested insight.</p><p class="knowledge-coverage">${coverage} · ${esc(connection)}</p></div>
+  const coverage = connectionScope==='all'?`Pilot: ${knowledge.stats.readings} of ${knowledge.stats.library} saved pieces`:`Showing ${covered} of ${knowledge.stats.readings} pilot pieces`;
+  result += `<section class="knowledge-view"><div class="knowledge-intro"><h2>Concepts</h2><p>Explore topics, follow a concept, then check the passages behind each suggested insight.</p><p class="knowledge-coverage">${coverage} · ${esc(connection)}</p></div>
     <div class="knowledge-tools"><nav class="knowledge-breadcrumbs" aria-label="Knowledge location"><button data-action="knowledge-home">Topics</button>${topic?`<span>/</span><button data-action="knowledge-topic" data-id="${esc(topic.id)}">${esc(topic.title)}</button>`:''}${concept?`<span>/</span><span aria-current="page">${esc(concept.title)}</span>`:''}</nav><div class="search-wrap">${icon('search')}<input id="knowledge-search" aria-label="Search knowledge pilot" placeholder="Search this pilot…" value="${esc(knowledgeQuery)}"></div></div>
     <div id="knowledge-results">${knowledgeResults(scoped,topic,concept)}</div></section>`;
   return result;
@@ -349,7 +373,7 @@ function catalogueCard(connection) {
     <div class="catalogue-card-bottom"><span>${connection.source_count?'Connected':connection.id==='raindrop'?'Connect your account':connection.id==='publications'?'Local subscriber login':'No account needed'}</span><button class="btn secondary small" data-action="${connection.source_count?'manage-connection':'connection-setup'}" data-id="${esc(connection.id)}">${connection.source_count?'Manage':'Connect'}</button></div>
   </article>`;
 }
-function sourcesPage() {
+function connectionsPage() {
   const catalogue = state.catalogue || [];
   const connected = catalogue.filter(connection => connection.source_count);
   const articles = state.sources.filter(source => source.kind==='article');
@@ -360,8 +384,8 @@ function sourcesPage() {
       <button role="tab" id="connections-browse-tab" aria-controls="connections-panel" aria-selected="${connectionsTab==='browse'}" tabindex="${connectionsTab==='browse'?'0':'-1'}" data-action="connections-tab" data-value="browse">Browse connections</button>
     </div>
     <div id="connections-panel" role="tabpanel" aria-labelledby="connections-${connectionsTab}-tab">
-      ${connectionsTab==='browse'?`<div class="catalogue-grid">${catalogue.map(catalogueCard).join('')}</div><p class="connections-note">Connections and updates are reviewed before they appear here. <a href="https://github.com/arbi11/kindle_service/tree/community-connections/connections" target="_blank" rel="noopener noreferrer">Contribute a connection ${icon('external')}</a></p>`:
-      `<div class="connected-groups">${connected.map(connectedGroup).join('')}${articles.length?`<article class="connection-group" data-connection-id="article"><header class="connection-group-header"><div class="connection-identity">${icon('article')}<h2>Saved articles</h2></div></header>${articles.map(sourceRow).join('')}</article>`:''}${!connected.length&&!articles.length?'<div class="connections-empty"><h2>No connections yet</h2><p>Choose Add connection to start collecting articles.</p></div>':''}</div><button class="text-btn add-single-article" data-action="add-article">${icon('plus')} Add an article by URL</button>`}
+      ${connectionsTab==='browse'?`<div class="catalogue-grid">${catalogue.map(catalogueCard).join('')}</div><p class="connections-note">Connections and updates are reviewed before they appear here. <a href="https://github.com/arbi11/kindle_service/tree/main/connections" target="_blank" rel="noopener noreferrer">Contribute a connection ${icon('external')}</a></p>`:
+      `<div class="connected-groups">${connected.map(connectedGroup).join('')}${articles.length?`<article class="connection-group" data-connection-id="article"><header class="connection-group-header"><div class="connection-identity">${icon('article')}<h2>Saved articles</h2></div></header>${articles.map(sourceRow).join('')}</article>`:''}${!connected.length&&!articles.length?'<div class="connections-empty"><h2>No connections yet</h2><p>Choose Add connection to start collecting articles.</p></div>':''}</div>`}
     </div>
   </section>`;
 }
@@ -380,16 +404,24 @@ function check(name,label,description,checked) { return `<label class="checkbox-
 function credential(name,label,placeholder,hint='',prefix='f') { const saved = state.secrets.configured[name];return `<div class="field full"><label for="${prefix}-${name}">${label}</label><input autocomplete="new-password" id="${prefix}-${name}" name="${name}" type="password" placeholder="${saved?'Saved · leave blank to keep it':esc(placeholder)}"><span class="hint">${hint}</span>${saved?`<span class="key-state">${icon('lock')} Stored in your ${esc(state.secrets.storage)} <button class="text-btn" type="button" data-action="clear-secret" data-name="${name}">Remove</button></span>`:''}</div>`; }
 function settingsRail() { return `<aside class="settings-rail"><h3 class="rail-heading">A library that belongs to you.</h3><p>Sources, articles and reading history stay on this device. There’s no Quib27 account to create.</p><ul class="privacy-list"><li>${icon('check')} Your own API key</li><li>${icon('check')} Direct provider connections</li><li>${icon('check')} No analytics or tracking</li><li>${icon('check')} Read offline once prepared</li></ul><p class="footnote">When you enable summaries, source text is sent directly to your chosen AI provider. Email delivery uses your chosen mail provider.<br><br>Credentials use your ${esc(state.secrets.storage)}.</p></aside>`; }
 function settingsPage() {
-  const s = state.settings;
-  return heading('Made for your reading.','A few preferences to make each edition feel more like yours.')+`<div class="settings-layout"><form id="settings-form"><section class="form-card"><h2>Appearance</h2><div class="field"><label for="appearance-theme">Theme</label><select id="appearance-theme" name="reader_theme"><option value="light" ${s.reader_theme==='light'?'selected':''}>Light</option><option value="dark" ${s.reader_theme==='dark'?'selected':''}>Dark</option><option value="sepia" ${s.reader_theme==='sepia'?'selected':''}>Sepia reader</option></select><span class="hint">Dark mode applies to the whole app and the reader. Changes are saved immediately.</span></div></section><section class="form-card"><h2>Your AI, your choice.</h2><p class="description">Bring your own key. Usage is billed by your provider; Quib27 is free.</p><div class="form-grid"><div class="field"><label for="f-provider">Provider</label><select id="f-provider" name="provider"><option value="openai" ${s.provider==='openai'?'selected':''}>OpenAI</option><option value="openrouter" ${s.provider==='openrouter'?'selected':''}>OpenRouter</option></select></div>${field('model','Model ID',s.model,'text','Use a model available in your provider account.')}${credential(s.provider+'_key','API key','Paste your '+(s.provider==='openai'?'OpenAI':'OpenRouter')+' key','Your key stays on this computer and is never returned to the interface.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-ai">${icon('check')} Check model</button><span class="hint">Makes one small API request.</span></div></section><section class="form-card"><h2>Tell us what catches your attention.</h2><p class="description">Summaries give more room to the details you care about.</p><div class="form-grid"><div class="field full"><label for="f-interests">Your interests</label><textarea name="interests" id="f-interests" placeholder="For example: engineering, thoughtful investing, science, and the stories behind new ideas.">${esc(s.interests)}</textarea></div>${field('summary_words','Words per summary',s.summary_words,'number','150–2,000 words. Around 220 words is one minute of reading.')}${field('reading_minutes','Daily reading budget',s.reading_minutes,'number','Minutes of reading per edition.')}<div class="field full">${check('summarize_articles','Include AI summaries of saved articles','The full article stays available in the reader. Without a key, articles are saved in full.',s.summarize_articles)}</div></div></section><section class="form-card"><h2>A manageable edition.</h2><p class="description">Keep processing time and API usage predictable.</p><div class="form-grid">${field('max_items_per_run','Maximum new pieces per run',s.max_items_per_run,'number','1–20 pieces. Additional items wait for a later run.')}${field('lookback_days','Look back this many days',s.lookback_days,'number','1–30 days of recent uploads and bookmarks.')}<div class="field full">${check('audio_fallback','Allow cloud transcription when captions are unavailable','May download video audio and add transcription charges. Caption access can vary by video.',s.audio_fallback)}</div>${field('audio_minutes_per_video','Audio budget per run',s.audio_minutes_per_video,'number','Maximum cloud transcription minutes, also capped per video. Shared across the run.')}</div><div class="setting-info">API requests use the provider you selected. Failed summaries are reported in Sources; the app does not switch to another paid provider.</div></section><div class="form-actions"><button class="btn" type="submit">Save preferences ${icon('check')}</button><span class="hint">Applies to the next edition.</span></div><section class="form-card" style="margin-top:30px"><h2>Bring your reading with you.</h2><p class="description">Import an EPUB or your existing laptop service settings and recent editions.</p><div class="inline-actions"><button class="btn secondary small" type="button" data-action="upload">${icon('download')} Import EPUB</button>${state.legacy_available?'<button class="btn secondary small" type="button" data-action="import">Import existing service</button>':''}</div><div class="setting-info">Importing the existing service copies its settings and sources. Automatic sending stays paused in this app so your existing service can continue without duplicate delivery.</div><p class="mini muted" style="margin-top:17px;overflow-wrap:anywhere">Your local library: ${esc(state.data_directory)}</p></section></form>${settingsRail()}</div>`;
+  const tabs=modeTabs('settings-section','Settings sections',[['preferences','Preferences'],['delivery','Delivery'],['about','About']],settingsSection);
+  return heading('Settings','')+tabs+({preferences:preferencesPage,delivery:deliveryPage,about:aboutPage}[settingsSection]||preferencesPage)();
+}
+function aboutPage() {
+  return `<section class="form-card about-card"><h2>Quib27</h2><dl><dt>Version</dt><dd>v${esc(state.version)}</dd><dt>Library</dt><dd>Stored on this device</dd><dt>Location</dt><dd class="data-location">${esc(state.data_directory)}</dd></dl><p class="description">Articles, connections and reading history are stored locally. Enabled AI summaries send source text to your chosen model provider. Email and Kindle delivery use your configured mail provider.</p></section>
+    ${state.legacy_available?`<section class="form-card"><h2>Import existing service</h2><p class="description">Copy the original laptop service’s settings, sources and recent editions. Automatic sending starts paused in Quib27.</p><button class="btn secondary small" data-action="import">Import existing service</button></section>`:''}`;
+}
+function preferencesPage() {
+  const s = {...state.settings,...settingsDrafts.get('settings-form')};
+  return `<div class="settings-layout"><form id="settings-form"><section class="form-card"><h2>Appearance</h2><div class="field"><label for="appearance-theme">Theme</label><select id="appearance-theme" name="reader_theme"><option value="light" ${s.reader_theme==='light'?'selected':''}>Light</option><option value="dark" ${s.reader_theme==='dark'?'selected':''}>Dark</option><option value="sepia" ${s.reader_theme==='sepia'?'selected':''}>Sepia reader</option></select><span class="hint">Dark mode applies to the whole app and the reader. Changes are saved immediately.</span></div></section><section class="form-card"><h2>AI connection</h2><p class="description">Bring your own key. Usage is billed by your provider; Quib27 is free.</p><div class="form-grid"><div class="field"><label for="f-provider">Provider</label><select id="f-provider" name="provider"><option value="openai" ${s.provider==='openai'?'selected':''}>OpenAI</option><option value="openrouter" ${s.provider==='openrouter'?'selected':''}>OpenRouter</option></select></div>${field('model','Model ID',s.model,'text','Use a model available in your provider account.')}${credential(s.provider+'_key','API key','Paste your '+(s.provider==='openai'?'OpenAI':'OpenRouter')+' key','Your key stays on this computer and is never returned to the interface.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-ai">${icon('check')} Check model</button><span class="hint">Makes one small API request.</span></div></section><section class="form-card"><h2>Reading preferences</h2><p class="description">Summaries give more room to the details you care about.</p><div class="form-grid"><div class="field full"><label for="f-interests">Your interests</label><textarea name="interests" id="f-interests" placeholder="For example: engineering, thoughtful investing, science, and the stories behind new ideas.">${esc(s.interests)}</textarea></div>${field('summary_words','Words per summary',s.summary_words,'number','150–2,000 words. Around 220 words is one minute of reading.')}${field('reading_minutes','Daily reading budget',s.reading_minutes,'number','Minutes of reading per edition.')}<div class="field full">${check('summarize_articles','Include AI summaries of saved articles','The full article stays available in the reader. Without a key, articles are saved in full.',s.summarize_articles)}</div></div></section><section class="form-card"><h2>Processing limits</h2><p class="description">Keep processing time and API usage predictable.</p><div class="form-grid">${field('max_items_per_run','Maximum new pieces per run',s.max_items_per_run,'number','1–20 pieces. Additional items wait for a later run.')}${field('lookback_days','Look back this many days',s.lookback_days,'number','1–30 days of recent uploads and bookmarks.')}<div class="field full">${check('audio_fallback','Allow cloud transcription when captions are unavailable','May download video audio and add transcription charges. Caption access can vary by video.',s.audio_fallback)}</div>${field('audio_minutes_per_video','Audio budget per run',s.audio_minutes_per_video,'number','Maximum cloud transcription minutes, also capped per video. Shared across the run.')}</div><div class="setting-info">API requests use the provider you selected. Failed summaries are reported beside their connection; the app does not switch to another paid provider.</div></section><div class="form-actions"><button class="btn" type="submit">Save preferences ${icon('check')}</button><span class="hint">Applies to the next edition.</span></div></form>${settingsRail()}</div>`;
 }
 function deliveryPage() {
   const s=state.settings;
-  return heading('A good read, delivered.','Set a routine. Let your laptop prepare the edition, and meet it wherever you read.')+`<div class="settings-layout"><form id="delivery-form"><section class="form-card"><h2>Where do you like to read?</h2><p class="description">Every edition is available here. Choose additional ways to receive it.</p><div class="form-grid"><div class="field full">${check('email_enabled','A personal newsletter','The entire edition, beautifully formatted in the email body.',s.email_enabled)}</div>${field('email_to','Newsletter email address',s.email_to,'email','Separate multiple addresses with commas.','full')}<div class="field full" style="margin-top:8px">${check('kindle_enabled','Send to Kindle','A distraction-free EPUB attachment for your Kindle library.',s.kindle_enabled)}</div>${field('kindle_to','Send-to-Kindle address',s.kindle_to,'text','Add your sender to Amazon’s Approved Personal Document E-mail List.','full')}</div></section><section class="form-card"><h2>Sent through your own email.</h2><p class="description">Use your mail provider’s SMTP details. For Gmail, use an App Password.</p><div class="form-grid">${field('smtp_host','SMTP server',s.smtp_host)}${field('smtp_port','Port',s.smtp_port,'number','465 for secure SMTP, or 587 with STARTTLS.')}${field('smtp_username','Email / username',s.smtp_username,'email')}${field('smtp_sender','Sender email',s.smtp_sender,'email','Leave blank to use your username.')}${credential('smtp_password','App password','Your mail provider’s app password','Encrypted transport is required for all delivery connections.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-smtp">${icon('check')} Check connection</button><span class="hint">Signs in without sending a message.</span></div></section><section class="form-card"><h2>A rhythm that fits your day.</h2><p class="description">The app prepares one edition after a missed slot when the laptop wakes up.</p><div class="form-grid">${field('timezone','Timezone',s.timezone,'text','For example: Asia/Kolkata or America/New_York.')}${field('delivery_times','Preparation times',s.delivery_times.join(', '),'text','24-hour times, separated by commas. Up to four.')}<div class="field full">${check('schedule_enabled','Prepare editions automatically','Keep Quib27 running in the background, with your laptop awake and connected.',s.schedule_enabled)}</div><div class="field full">${check('auto_send','Send each scheduled edition automatically','Use the email and Kindle destinations enabled above.',s.auto_send)}</div><div class="field full">${check('autostart','Launch at login','Starts in the system tray so your reading routine can continue.',state.autostart)}</div></div><div class="setting-info">Closing the window keeps the app in the tray when a schedule is enabled. Choose Quit in the tray menu to stop it.</div></section><div class="form-actions"><button class="btn" type="submit">Save delivery settings ${icon('check')}</button><button class="btn secondary" type="button" data-action="send-latest">${icon('mail')} Preview & send latest</button></div></form><aside class="settings-rail"><h3 class="rail-heading">Read wherever feels right.</h3><p>Receive an edition in your inbox, or let your Kindle hold the reading for later. You can always open it here, too.</p><ul class="privacy-list"><li>${icon('check')} Full newsletter in the email</li><li>${icon('check')} EPUB attachment for Kindle</li><li>${icon('check')} Delivery history on this device</li><li>${icon('check')} No repeated successful sends</li></ul><p class="footnote">Your mail server confirms acceptance. Kindle processing and inbox delivery happen after that, through your email provider and Amazon.</p></aside></div><section class="form-card" style="margin-top:28px"><h2>Delivery history</h2><p class="description">A record of what your mail server accepted.</p>${state.deliveries.length?`<table class="delivery-history"><thead><tr><th>Edition</th><th>Destination</th><th>Status</th><th>When</th></tr></thead><tbody>${state.deliveries.map(d=>`<tr><td>${esc(d.edition_title || 'Edition')}</td><td class="target">${icon(d.channel==='kindle'?'kindle':'mail')} ${esc(d.target)}</td><td><span class="status-chip ${d.status==='sent'?'':'warn'}">${esc(d.status==='sent'?'Accepted by mail server':d.status)}</span>${d.message&&d.status!=='sent'?`<p class="history-error">${esc(d.message)}</p>`:''}${d.status==='uncertain'?`<div class="inline-actions" style="margin-top:9px"><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="sent">Received it</button><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="retry">Allow retry</button></div>`:''}</td><td>${shortDate(d.created_at)}<br>${timeOf(d.created_at)}</td></tr>`).join('')}</tbody></table>`:'<p class="intro-line">Your first delivery will appear here. Prepare an edition, then use Preview & send.</p>'}</section>`;
+  return `<div class="settings-layout"><form id="delivery-form"><section class="form-card"><h2>Where do you like to read?</h2><p class="description">Every edition is available here. Choose additional ways to receive it.</p><div class="form-grid"><div class="field full">${check('email_enabled','A personal newsletter','The entire edition, beautifully formatted in the email body.',s.email_enabled)}</div>${field('email_to','Newsletter email address',s.email_to,'email','Separate multiple addresses with commas.','full')}<div class="field full" style="margin-top:8px">${check('kindle_enabled','Send to Kindle','A distraction-free EPUB attachment for your Kindle library.',s.kindle_enabled)}</div>${field('kindle_to','Send-to-Kindle address',s.kindle_to,'text','Add your sender to Amazon’s Approved Personal Document E-mail List.','full')}</div></section><section class="form-card"><h2>Sent through your own email.</h2><p class="description">Use your mail provider’s SMTP details. For Gmail, use an App Password.</p><div class="form-grid">${field('smtp_host','SMTP server',s.smtp_host)}${field('smtp_port','Port',s.smtp_port,'number','465 for secure SMTP, or 587 with STARTTLS.')}${field('smtp_username','Email / username',s.smtp_username,'email')}${field('smtp_sender','Sender email',s.smtp_sender,'email','Leave blank to use your username.')}${credential('smtp_password','App password','Your mail provider’s app password','Encrypted transport is required for all delivery connections.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-smtp">${icon('check')} Check connection</button><span class="hint">Signs in without sending a message.</span></div></section><section class="form-card"><h2>A rhythm that fits your day.</h2><p class="description">The app prepares one edition after a missed slot when the laptop wakes up.</p><div class="form-grid">${field('timezone','Timezone',s.timezone,'text','For example: Asia/Kolkata or America/New_York.')}${field('delivery_times','Preparation times',s.delivery_times.join(', '),'text','24-hour times, separated by commas. Up to four.')}<div class="field full">${check('schedule_enabled','Prepare editions automatically','Keep Quib27 running in the background, with your laptop awake and connected.',s.schedule_enabled)}</div><div class="field full">${check('auto_send','Send each scheduled edition automatically','Use the email and Kindle destinations enabled above.',s.auto_send)}</div><div class="field full">${check('autostart','Launch at login','Starts in the system tray so your reading routine can continue.',state.autostart)}</div></div><div class="setting-info">Closing the window keeps the app in the tray when a schedule is enabled. Choose Quit in the tray menu to stop it.</div></section><div class="form-actions"><button class="btn" type="submit">Save delivery settings ${icon('check')}</button></div></form><aside class="settings-rail"><h3 class="rail-heading">Read wherever feels right.</h3><p>Receive an edition in your inbox, or let your Kindle hold the reading for later. You can always open it here, too.</p><ul class="privacy-list"><li>${icon('check')} Full newsletter in the email</li><li>${icon('check')} EPUB attachment for Kindle</li><li>${icon('check')} Delivery history on this device</li><li>${icon('check')} No repeated successful sends</li></ul><p class="footnote">Your mail server confirms acceptance. Kindle processing and inbox delivery happen after that, through your email provider and Amazon.</p></aside></div><section class="form-card" style="margin-top:28px"><h2>Delivery history</h2><p class="description">A record of what your mail server accepted.</p>${state.deliveries.length?`<table class="delivery-history"><thead><tr><th>Edition</th><th>Destination</th><th>Status</th><th>When</th></tr></thead><tbody>${state.deliveries.map(d=>`<tr><td>${esc(d.edition_title || 'Edition')}</td><td class="target">${icon(d.channel==='kindle'?'kindle':'mail')} ${esc(d.target)}</td><td><span class="status-chip ${d.status==='sent'?'':'warn'}">${esc(d.status==='sent'?'Accepted by mail server':d.status)}</span>${d.message&&d.status!=='sent'?`<p class="history-error">${esc(d.message)}</p>`:''}${d.status==='uncertain'?`<div class="inline-actions" style="margin-top:9px"><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="sent">Received it</button><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="retry">Allow retry</button></div>`:''}</td><td>${shortDate(d.created_at)}<br>${timeOf(d.created_at)}</td></tr>`).join('')}</tbody></table>`:'<p class="intro-line">Your first delivery will appear here. Open an edition in Reading to preview and send it.</p>'}</section>`;
 }
 function editionPage() {
   const e=currentEdition, words=e.items.reduce((sum,i)=>sum+i.words,0);
-  return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to ${view==='library'?'library':'today'}</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
+  return `<button class="text-btn" data-action="back-edition" style="margin-bottom:25px">${icon('back')} Back to editions</button>`+heading('An edition to settle into.','A few good things, gathered in one quiet place.')+`<section class="edition-listing"><div class="edition-summary"><div><div class="small-label" style="margin-bottom:11px">${e.is_sample?'Sample edition':shortDate(e.created_at)+' · Your daily edition'}</div><h2>${esc(e.title)}</h2><p>${e.items.length} pieces · About ${minutes(words)} minutes of reading</p></div><div class="edition-actions"><a class="btn secondary small" href="/api/editions/${e.id}/epub">${icon('download')} EPUB</a><a class="btn secondary small" href="/api/editions/${e.id}/html">HTML</a><button class="btn small" data-action="send" data-id="${e.id}">${icon('mail')} Preview & send</button></div></div><div class="article-list">${e.items.map(itemRow).join('')}</div></section>`;
 }
 async function openReader(id,citation=null) {
   const item = await api('/items/'+id);
@@ -405,11 +437,11 @@ async function openReader(id,citation=null) {
 function renderReader() {
   KnowledgeGraph.unmount();
   captureConnectionDraft();
-  const item=currentItem, queue=readerCitation?[]:currentEdition?currentEdition.items:view==='knowledge'?KnowledgeGraph.readingQueue():view==='today'?digestItems():connectionItems();
+  const item=currentItem, queue=readerCitation?[]:currentEdition?currentEdition.items:view==='knowledge'&&knowledgeMode==='graph'?KnowledgeGraph.readingQueue():digestItems();
   const position=queue.findIndex(i=>i.id===item.id), next=position>=0?queue[position+1]:null;
   $('#app').innerHTML=`<div class="reader-shell ${readerTheme}" style="--reader-size:${readerSize}px"><header class="reader-toolbar"><div class="left"><button class="icon-btn" data-action="reader-back" aria-label="Back to reading list">${icon('back')}</button><span class="reader-brand" title="Quib27"><img class="brand-mark" src="/icon.svg" width="26" height="26" alt="">Quib27</span><span class="reader-label">A little space to read.</span></div><div class="right">${sample(item)}<button class="icon-btn" data-action="font-smaller" aria-label="Smaller text">A−</button><button class="icon-btn" data-action="font-larger" aria-label="Larger text">A+</button>${themeButton(true)}<button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${item.id}" aria-label="${item.starred?'Unsave':'Save'} this piece">${icon('bookmark')}</button></div></header><div class="reader-progress" id="reading-progress"></div><main class="reader-content"><div class="article-meta">${sourceIcon(item.kind)} ${esc(item.author || 'Your reading')} <span>·</span> ${shortDate(item.published)}</div><h1>${esc(item.title)}</h1><div class="reading-info"><span>${icon('clock')} ${minutes(item.words)} min read</span><span>·</span><span>${item.kind==='video'?'Video summary':'Saved article'}</span>${contentAttribution(item)}${item.url?`<a class="reader-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open source ${icon('external')}</a>`:''}</div>${item.summary_html&&item.body_html?`<div class="reader-tabs"><button data-action="reader-tab" data-value="summary" class="${readerTab==='summary'?'active':''}">Summary</button><button data-action="reader-tab" data-value="original" class="${readerTab==='original'?'active':''}">${item.kind==='video'?'Transcript':'Full article'}</button></div>`:''}${item.selection_reason?`<p class="reader-selection">Selected for you: ${esc(item.selection_reason)}</p>`:''}${item.takeaway&&readerTab==='summary'?`<div class="takeaway"><span class="eyebrow">The thought to take with you</span>${esc(item.takeaway)}</div>`:''}<article class="prose">${readerTab==='summary'&&item.summary_html?item.summary_html:item.body_html}</article><footer class="reader-end"><p>A little more time, well spent.</p><div class="inline-actions"><button class="btn ${item.is_read?'secondary':''}" data-action="mark-read" data-id="${item.id}">${icon('check')} ${item.is_read?'Read':'Mark as read'}</button>${next?`<button class="icon-btn" data-action="read" data-id="${next.id}" aria-label="Read next piece">${icon('arrow')}</button>`:''}</div></footer></main></div>`;
   decorateCitedPassage();
-  if(lastView==='knowledge') $('[data-action="reader-back"]').setAttribute('aria-label','Back to knowledge graph');
+  if(lastView==='knowledge') $('[data-action="reader-back"]').setAttribute('aria-label','Back to knowledge');
 }
 function decorateCitedPassage() {
   if(!readerCitation) return;
@@ -452,7 +484,7 @@ function setupModal() {
 async function sendModal(id) {
   const edition=await api('/editions/'+id), targets=[];
   for(const channel of ['email','kindle']) if(state.settings[channel+'_enabled']) for(const address of state.settings[channel+'_to'].split(/[,;\n]/).map(x=>x.trim()).filter(Boolean)) targets.push([channel,address]);
-  if (!targets.length) { toast('Add an email or Kindle destination in Delivery first.'); navigation('delivery'); return; }
+  if (!targets.length) { toast('Add an email or Kindle destination in Settings → Delivery first.'); navigation('delivery'); return; }
   modal(`<h2 id="modal-title">Ready to send?</h2><p class="description">${esc(edition.title)}<br>${edition.items.length} pieces · About ${minutes(edition.items.reduce((a,i)=>a+i.words,0))} minutes to read.</p>${edition.is_sample?'<div class="modal-success">This is a sample edition. You can send it to try the delivery experience.</div>':''}<div class="small-label" style="margin-bottom:12px">Your destinations</div>${targets.map(([channel,address])=>`<div class="recipient">${icon(channel==='kindle'?'kindle':'mail')} ${esc(address)} <span class="mini muted">${channel==='kindle'?'EPUB':'Newsletter'}</span></div>`).join('')}<p class="description" style="margin-top:18px;margin-bottom:15px">Previously successful sends to these addresses will be skipped. Your mail server confirms acceptance; inbox and Kindle processing happen afterwards.</p><div class="inline-actions"><a class="text-btn" href="/api/editions/${id}/html">Download email preview ${icon('external')}</a><a class="text-btn" href="/api/editions/${id}/epub">Download EPUB ${icon('download')}</a></div><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep reading</button><button class="btn" data-action="confirm-send" data-id="${id}">${icon('mail')} Send edition</button></div>`,'YOUR PERSONAL NEWSLETTER');
 }
 async function startTask(kind,payload={}) {
@@ -496,6 +528,8 @@ async function saveSettingsForm(form,quiet=false) {
   if(typeof values.delivery_times==='string') values.delivery_times=values.delivery_times.split(',').map(t=>t.trim()).filter(Boolean);
   const result=await api('/settings','POST',{settings:values,credentials});
   if(autostart!==undefined&&autostart!==state.autostart) await api('/autostart','POST',{enabled:autostart});
+  settingsDrafts.delete(form.id);
+  form.querySelectorAll('input[type="password"]').forEach(input=>{input.value='';});
   state.settings=result.settings;state.secrets=result.secrets;applyTheme(state.settings.reader_theme);
   if(!quiet) {toast('Your preferences are saved.');await refresh();}
 }
@@ -512,7 +546,7 @@ document.addEventListener('submit',async event=>{
     else if(form.id==='setup-form') {
       const values=readForm(form), credentials={};if(values.api_key) credentials[values.provider+'_key']=values.api_key;
       await api('/settings','POST',{settings:{provider:values.provider,model:values.provider==='openai'?'gpt-6-luna':'openai/gpt-6-luna',interests:values.interests,onboarding_done:true},credentials});
-      dialog.close();await refresh(false);navigation('sources');showSourceModal();
+      dialog.close();await refresh(false);await navigation('connections');showSourceModal();
     } else {
       const values=readForm(form), kind=form.dataset.sourceKind;
       if(kind==='raindrop'&&values.raindrop_token) await api('/settings','POST',{credentials:{raindrop_token:values.raindrop_token}});
@@ -532,16 +566,18 @@ document.addEventListener('click',async event=>{
   event.stopPropagation();
   try {
     if(target.dataset.connection) {
-      digestConnection=target.dataset.connection;
-      if(view==='knowledge') {KnowledgeGraph.setConnection(digestConnection);return;}
-      navigation(view==='library'?'library':'today');
+      setConnectionScope(target.dataset.connection);
+      filters={kind:'all',status:'all',q:''};
+      await navigation('reading');
       return;
     }
-    if(target.dataset.nav) {navigation(target.dataset.nav);return;}
+    if(target.dataset.nav) {await navigation(target.dataset.nav);return;}
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
     if(a==='close-modal') dialog.close();
-    else if(a==='library-mode') {libraryMode=target.dataset.value==='knowledge'?'knowledge':'reading';render();}
+    else if(a==='reading-mode') {readingMode=target.dataset.value==='editions'?'editions':'stories';await refresh();}
+    else if(a==='knowledge-mode') {knowledgeMode=target.dataset.value==='concepts'?'concepts':'graph';render();}
+    else if(a==='settings-section') {captureSettingsDraft();settingsSection=target.dataset.value;render();}
     else if(a==='knowledge-home') {knowledgeTopic=null;knowledgeConcept=null;knowledgeQuery='';render();}
     else if(a==='knowledge-topic') {knowledgeTopic=id;knowledgeConcept=null;knowledgeQuery='';render();window.scrollTo(0,0);}
     else if(a==='knowledge-concept') {
@@ -549,7 +585,7 @@ document.addEventListener('click',async event=>{
       if(!parents.some(t=>t.id===knowledgeTopic)) knowledgeTopic=parents[0]?.id||null;
       knowledgeConcept=id;knowledgeQuery='';render();window.scrollTo(0,0);
     }
-    else if(a==='knowledge-source') {const citation=view==='knowledge'?KnowledgeGraph.citation(id):knowledge?.citations.find(c=>c.id===id);if(citation?.available) await openReader(citation.item_id,citation);}
+    else if(a==='knowledge-source') {const citation=knowledgeMode==='graph'?KnowledgeGraph.citation(id):knowledge?.citations.find(c=>c.id===id);if(citation?.available) await openReader(citation.item_id,citation);}
     else if(a==='expand-connection') {
       captureConnectionDraft();expandedConnection=expandedConnection===id?null:id;
       renderConnectionRail();
@@ -558,7 +594,7 @@ document.addEventListener('click',async event=>{
     else if(a==='connections-tab') {connectionsTab=target.dataset.value;render();$('#connections-'+connectionsTab+'-tab')?.focus({preventScroll:true});}
     else if(a==='connection-setup') connectionSetup(id);
     else if(a==='manage-connection') {connectionsTab='yours';render();document.querySelector('.connection-group[data-connection-id="'+id+'"]')?.scrollIntoView({block:'nearest'});}
-    else if(a==='add-article') showSourceModal('article');
+    else if(a==='add-article') modal(`<h2 id="modal-title">Add article</h2><form id="source-form" data-source-kind="article">${sourceFields('article')}<button class="btn full" type="submit">Add article</button><div class="form-feedback" role="status"></div></form>`);
     else if(a==='publication-login') {const result=await api('/publications/'+id+'/login','POST',{});activeJob=result.job_id;await refresh(false);updateTask();}
     else if(a==='publication-edit') {
       const source=state.sources.find(s=>s.id===id);
@@ -567,7 +603,7 @@ document.addEventListener('click',async event=>{
       for(const element of $('#source-form').elements) if(element.name in values) {if(element.type==='checkbox') element.checked=values[element.name];else element.value=values[element.name];}
     }
     else if(a==='fetch-source') {await startTask('prepare',{source_id:id});updateTask();}
-    else if(a==='prepare') {if(!state.sources.some(s=>s.enabled)) {navigation('sources');showSourceModal();}else await startTask('prepare');}
+    else if(a==='prepare') {if(!state.sources.some(s=>s.enabled)) {await navigation('connections');showSourceModal();}else await startTask('prepare');}
     else if(a==='add-source') showSourceModal();
     else if(a==='connect-raindrop') showSourceModal('raindrop');
     else if(a==='source-tab') showSourceModal(target.dataset.value);
@@ -576,7 +612,7 @@ document.addEventListener('click',async event=>{
     else if(a==='confirm-import') {dialog.close();await startTask('import_legacy');}
     else if(a==='upload') $('#epub-file').click();
     else if(a==='read') await openReader(id);
-    else if(a==='edition') {currentEdition=await api('/editions/'+id);currentItem=null;render();window.scrollTo(0,0);}
+    else if(a==='edition') {captureSettingsDraft();currentEdition=await api('/editions/'+id);currentItem=null;view='reading';readingMode='editions';render();window.scrollTo(0,0);}
     else if(a==='back-edition') {currentEdition=null;render();}
     else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;readerCitation=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);(document.getElementById(readerReturnFocus)||document.getElementById('title-'+readerReturnItemId)||document.querySelector('[data-action="read"][data-id="'+CSS.escape(readerReturnItemId)+'"]'))?.focus({preventScroll:true});}
     else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
@@ -588,7 +624,6 @@ document.addEventListener('click',async event=>{
     else if(a==='remove-source') {const source=state.sources.find(s=>s.id===id);modal(`<h2 id="modal-title">Stop following this source?</h2><p class="description">${esc(source.title)}<br>Reading already in your library stays available.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep following</button><button class="btn danger" data-action="confirm-remove-source" data-id="${id}">Remove source</button></div>`);}
     else if(a==='confirm-remove-source') {await api('/sources/'+id,'DELETE',{});dialog.close();await refreshConnections();toast('Source removed. Your saved reading stays in the library.');}
     else if(a==='send') await sendModal(id);
-    else if(a==='send-latest') {await saveSettingsForm($('#delivery-form'),true);const edition=latestEdition();if(edition) await sendModal(edition.id);else toast('Prepare an edition first.');}
     else if(a==='resolve-delivery') {await api('/deliveries/'+id+'/resolve','POST',{resolution:target.dataset.value});await refresh();toast(target.dataset.value==='sent'?'Receipt confirmed.':'Retry allowed. Check your mailbox before sending this edition again.');}
     else if(a==='confirm-send') {dialog.close();await startTask('send',{edition_id:id});}
     else if(a==='test-ai') {await saveSettingsForm($('#settings-form'),true);await startTask('test_ai');}
@@ -603,7 +638,7 @@ document.addEventListener('click',async event=>{
       await startTask('test_raindrop');
     }
     else if(a==='clear-secret') {modal(`<h2 id="modal-title">Remove this saved credential?</h2><p class="description">Requests that need this credential will pause until you add it again.</p><div class="modal-footer"><button class="btn secondary" data-action="close-modal">Keep it</button><button class="btn danger" data-action="confirm-clear-secret" data-name="${esc(target.dataset.name)}">Remove credential</button></div>`);}
-    else if(a==='confirm-clear-secret') {await api('/settings','POST',{credentials:{[target.dataset.name]:''}});dialog.close();await refresh();toast('Saved credential removed.');}
+    else if(a==='confirm-clear-secret') {await api('/settings','POST',{credentials:{[target.dataset.name]:''}});for(const draft of [...settingsDrafts.values(),...connectionDrafts.values()]) delete draft[target.dataset.name];dialog.close();await refresh();toast('Saved credential removed.');}
   } catch(e) {toast(e.message,true);}
 });
 document.addEventListener('input',event=>{
@@ -614,10 +649,12 @@ document.addEventListener('input',event=>{
   }
   if(event.target.id==='search') {
     clearTimeout(searchTimer);const position=event.target.selectionStart;
-    searchTimer=setTimeout(async()=>{filters.q=event.target.value;await refresh();const input=$('#search');input?.focus();input?.setSelectionRange(position,position);},250);
+    filters.q=event.target.value;
+    searchTimer=setTimeout(async()=>{await refresh();const input=$('#search');input?.focus();input?.setSelectionRange(position,position);},250);
   }
 });
 document.addEventListener('change',async event=>{
+  if(event.target.id==='story-connection') {setConnectionScope(event.target.value);render();return;}
   if(event.target.id==='appearance-theme') {try {await setTheme(event.target.value);} catch(error) {toast(error.message,true);}return;}
   if(event.target.id==='f-provider') {
     const values=readForm($('#settings-form')),provider=event.target.value;
@@ -630,13 +667,13 @@ document.addEventListener('change',async event=>{
     try {const buffer=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<buffer.length;i+=8192) binary+=String.fromCharCode(...buffer.subarray(i,i+8192));const result=await api('/import-epub','POST',{content:btoa(binary)});activeJob=result.job_id;await refresh(false);updateTask();} catch(e) {toast(e.message,true);}
   }
 });
-document.addEventListener('keydown',event=>{
+document.addEventListener('keydown',async event=>{
   if(event.target.matches('[role="tab"][data-action="connections-tab"]')&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
     event.preventDefault();connectionsTab=event.key==='Home'?'yours':event.key==='End'?'browse':connectionsTab==='yours'?'browse':'yours';render();$('#connections-'+connectionsTab+'-tab')?.focus();
   }
   if(event.key==='Enter'&&event.target.matches('[role="button"][data-action]')) event.target.click();
   if(event.key==='Escape'&&currentItem&&!dialog.open) $('[data-action="reader-back"]')?.click();
-  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();if(view==='knowledge'&&!currentItem){$('#graph-search')?.focus();return;}libraryMode='reading';navigation('library');setTimeout(()=>$('#search')?.focus(),150);}
+  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();if(view==='knowledge'&&!currentItem){$(knowledgeMode==='graph'?'#graph-search':'#knowledge-search')?.focus();return;}await navigation('reading');$('#search')?.focus();}
 });
 dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)dialog.close();}});
 window.addEventListener('scroll',()=>{if(currentItem){const max=document.documentElement.scrollHeight-window.innerHeight;const bar=$('#reading-progress');if(bar)bar.style.width=(max>0?window.scrollY/max*100:100)+'%';}},{passive:true});

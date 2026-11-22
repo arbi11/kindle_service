@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from .content import sanitize
+from .store import READING_CONNECTION_SQL
 
 PILOT_FILE = "knowledge/pilot.json"
 PASSAGE_TAGS = {"p", "h1", "h2", "h3", "h4", "li", "pre", "blockquote", "figcaption"}
@@ -165,7 +166,7 @@ def graph(store, *, connection="all", start="", end=""):
         raise ValueError("The start date must be on or before the end date.")
     zone_name = store.settings()["timezone"]
     zone = ZoneInfo(zone_name)
-    readings = store.query("""SELECT id,title,author,connection_id,kind,published FROM items
+    readings = store.query(f"""SELECT id,title,author,{READING_CONNECTION_SQL} AS connection_id,kind,published FROM items
         WHERE is_sample=CASE WHEN EXISTS(SELECT 1 FROM items WHERE is_sample=0) THEN 0 ELSE 1 END
         ORDER BY published DESC,id""")
     for item in readings:

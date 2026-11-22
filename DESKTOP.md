@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.12 build runs on
+Quib27 is a free proprietary desktop reader. This 0.3.0 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -11,7 +11,7 @@ remains proprietary. Contributors submit new connections and code updates throug
 GitHub pull requests. Review is required before a connection or new version is
 listed in the catalogue. Review can later be delegated to trusted maintainers.
 
-**Sources → Manage connections** has Your connections and Browse connections tabs. Browse
+**Connections → Manage connections** has Your connections and Browse connections tabs. Browse
 lists reviewed versions, descriptions and maintainers. Connect opens service setup
 and displays access information for public feeds. Connected services and services
 with saved reading appear in the left panel. Sources can be fetched, paused,
@@ -144,40 +144,49 @@ preferences. This builds pinned Pi packages and a private Node runtime; desktop
 releases include both, so readers need no separate Node installation. See
 [connection details](connections/README.md#publications-preferences-and-local-subscriber-sessions).
 
-## The Daily Quib design preview
+## Workspace design
 
-The **Medium** connection follows a list of creators supplied as handles or
-profile links. Fetch articles per creator or use the existing reading schedule.
-Medium excerpts automatically try Freedium. The **Freedium** connection also
-accepts individual article links and saves readable text inside Quib27, with no
-need to open its website. The reader identifies text provided through Freedium.
-These paths work without an AI key; an unavailable article is reported and retried.
+The left panel has two destinations: **Reading** and **Knowledge**. **Settings**
+and the sun/moon appearance switch sit at the bottom. Version and library location
+are in **Settings → About**. Development uses `main`; the `v0.2.12` tag preserves
+the complete desktop milestone before this navigation cleanup.
 
-The **Knowledge graph** tab shows an interactive map of saved readings and their
-connections. Drag nodes, pan, zoom, search and inspect linked source passages.
-Filter by connection and an inclusive range of saved publication dates. Dates
-use the reader's configured timezone. An optional local [concept pilot](KNOWLEDGE.md)
-adds topics, shared concepts and suggested insights. Coverage counts distinguish
-these mapped readings from readings with source links only. The graph makes no AI
-calls and does not automatically extract concepts from the remaining library.
+**Reading → Stories** combines the compact Daily Quib list with search and the
+existing article/video and saved filters. The date heads the page; the list covers
+the saved history, ordered by most recent publication. Selecting a story opens the
+full reader directly. Back restores the filters, scroll and keyboard focus.
+**Add article** accepts a single public article URL without opening connector setup.
 
-The app contains the agreed three-column layout:
+**Reading → Editions** contains saved editions, EPUB import and preparation. Open an
+edition to read its stories, export EPUB/HTML or preview and send it. The connection
+filter is hidden here because editions can contain stories from several connections.
 
-- **Navigation** on the left: Today, Library, Sources, Delivery and Settings, with
-  a separate Filter stories section underneath. A connection filters the digest
-  or library; All connections restores the combined reading list.
-- **The Daily Quib** in the middle, with the date, a compact article list, and
-  Most recent ordering. Each entry shows its title, source, excerpt and reading
-  time. Selecting it opens the full reader directly. Back restores the feed,
-  connection filter, keyboard focus and scroll position.
-- **Connections** on the right: every reviewed connection is listed. Selecting
-  one expands its settings in place, including channel or collection setup and
-  fetch, pause, resume and disconnect controls. The panel stays available while
-  navigating the app. The expanded reader uses the full window.
+**Knowledge** combines the interactive **Graph** and the existing **Concepts** pilot.
+The graph supports dragging, panning, zoom, search and source inspection. Concepts
+opens topics, shared ideas, suggested insights and their cited passages. Coverage
+counts distinguish mapped concepts from readings with source links only. The pilot
+does not automatically extract concepts from the remaining library.
 
-Most relevant appears as an inactive sort option. Its ranking rules must be
-discussed before implementation. Configuration screens and Library retain their
-existing functions.
+**Filter stories** is one compact connection selector, shown only in Stories and
+Knowledge. Both use the same selected connection. Its choices come from the entire
+visible library, including retained reading from disconnected sources; searches do
+not remove choices. The graph's inclusive publication-date range is separate, and
+Reset dates preserves the selected connection. Reading search/type/bookmark filters
+stay in Reading when visiting Knowledge or Settings.
+
+The right **Connections** panel retains inline setup, fetch, pause/resume and
+disconnection. **Manage connections** opens the full overview and reviewed catalogue.
+Connection setup and updates never change the selected reading destination.
+
+**Settings → Preferences** holds appearance, the AI connection and reading/processing
+preferences. **Settings → Delivery** holds email, Kindle, SMTP, schedules, startup
+and delivery history. Unsaved preference and delivery drafts survive section changes
+in memory. Credentials in those drafts are not persisted by navigation.
+
+The Medium connection follows creator handles or profile links, trying Freedium for
+excerpts. Freedium also accepts individual publication links. Substack and Websites
+& blogs follow public publication feeds; Publications retains its restricted Pi
+selection and text-review tools. This cleanup changes navigation, not retrieval.
 
 On the development laptop, open **Quib27** from the applications
 menu or run `~/.local/bin/quib27`. This uses a separate preview
@@ -202,20 +211,20 @@ this release.
 
 ## First reading
 
-Use **Dark mode** at the bottom of the left panel or the sun/moon button in the
+Use the sun/moon button beside **Settings** at the bottom of the left panel or in the
 reader to switch the whole app between light and dark. **Settings → Appearance**
 also offers a sepia reader. Appearance changes save immediately, survive restarts,
 and preserve your current reading position and unsaved form entries.
 
 1. Open Quib27. Clearly labelled sample articles let you try the reader.
-2. In **Settings**, optionally add your AI key and reading interests.
+2. In **Settings → Preferences**, optionally add your AI key and reading interests.
 3. Select a connection in the right-hand **Connections** panel.
    Add channel URLs or @handles for YouTube; Raindrop uses a personal token and
    selected collections. Substack takes a publication address; Websites & blogs
    accepts a site or feed address. These feeds and Freedium need no account.
-   **Sources → Browse connections**
-   also shows the reviewed catalogue; Your connections retains Add an article by URL.
-4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library
+   **Manage connections → Browse connections**
+   shows the reviewed catalogue. Reading → Stories retains Add article by URL.
+4. Choose **Fetch articles** beside a source, or **Prepare edition** in Reading → Editions
    to check all enabled sources. Reading is collected, summarized when applicable,
    and saved locally. Your reading budget and per-run cap keep editions manageable.
 5. Select an article to open the full reader directly. Use the
@@ -256,7 +265,7 @@ stories remain accessible.
 
 ## Email and Kindle delivery
 
-In Delivery, choose newsletter email and/or Kindle, add recipients, and configure
+In **Settings → Delivery**, choose newsletter email and/or Kindle, add recipients, and configure
 your SMTP server. Gmail requires an App Password. For Kindle, add the sender to
 Amazon's Approved Personal Document E-mail List.
 
@@ -290,7 +299,7 @@ AI text goes directly to the selected provider using the user's key. Provider us
 is billed independently; it is not included in the free app. OpenAI and OpenRouter
 are supported with editable model IDs. There is no paid-provider fallback. Articles
 can be read without AI. Source permissions, paywalls, and YouTube caption blocking
-can prevent extraction; failures appear in Sources and are eligible for later retry.
+can prevent extraction; failures appear beside their connection and are eligible for later retry.
 
 Video captions are preferred. Optional cloud audio transcription starts disabled,
 has a per-run minutes budget, and requires FFmpeg/ffprobe on the computer. Local
@@ -304,15 +313,18 @@ Run `python daily_edition.py` for the desktop shell, or `--headless` for the loc
 service. `--data-dir /temporary/path --no-keyring --no-scheduler` creates an isolated
 test instance. The session details are stored owner-only in that directory.
 
+`agent/runtime/node --test tests/navigation.test.cjs` checks shared connection scope,
+stable archived origins, date resets and reading-state preservation without a browser.
+
 `python -B -m unittest discover -s tests -v` runs the offline Python checks; the
 legacy keyword tests additionally need wordfreq from requirements-test.txt. FFmpeg
 is used by transcription boundary tests. No tests send actual mail.
 
-With Playwright and Chrome installed, `node tests/desktop_ui.cjs /temporary/path/runtime.json`
-exercises reading controls, state, search, source management, real local article
-extraction, edition preparation, download, settings and delivery preview against an
-isolated running service. It uses a synthetic local article and makes no AI or SMTP
-calls. Optional environment variables: PLAYWRIGHT_MODULE and CHROME_EXECUTABLE.
+Review the current UI against an isolated profile: search and connection scope in
+Reading, date filtering and cited passages in Knowledge, edition opening/export,
+connection drafts, Settings sections and appearance. The current navigation was
+also reviewed against a private copy of the complete library at ordinary and
+minimum desktop widths. No live model or SMTP request is needed for these checks.
 
 Run `python build_desktop.py` to create the bundled executable and release archive
 under dist/. The build explicitly includes UI assets and application code, never
@@ -320,20 +332,12 @@ the local library, transcripts, credentials or test artifacts. It replaces Ebook
 with a ZIP/XML EPUB writer. License notices are included in the release; review
 third-party distribution obligations before a wider public release.
 
-The earlier `desktop-app` and `desktop-redesign` branches preserve the v0.1 and
-approved reading-layout checkpoints. Connection development is on `community-connections`.
+All development stays on `main`. Earlier implementations remain in its commit history;
+reviewed milestones use tags rather than additional branches.
 
 
-For the connection-specific browser checks, run an isolated fixture server with
-`python tests/connection_ui_server.py --data-dir /temporary/connection-ui`, then
-`node tests/connections_ui.cjs /temporary/connection-ui/runtime.json`. It tests
-catalogue setup, fetching, pause/resume, disconnection, filters and EPUB export
-using synthetic service responses. It blocks real mail and external network.
-
-With another fresh fixture profile, `node tests/panels_ui.cjs /temporary/panel-ui/runtime.json`
-checks the three-panel layout, inline connection setup, credential checks, story
-filters, keyboard controls, and preservation of unsaved forms during connection jobs.
-
-`tests/subscriptions_ui.cjs` uses a fresh instance of the same fixture server to
-check custom-domain Substack setup, website feed discovery, RSS/Atom full text,
-sanitization, duplicate fetching, pause/resume and retained reading after disconnect.
+The older Playwright scripts under `tests/*_ui.cjs` target previous screen layouts
+and are retained as historical workflow fixtures. They are not the current
+navigation checks. Backend connection/import/delivery tests remain in the offline
+Python suite; `tests/navigation.test.cjs` covers the current navigation state and
+runs in CI.

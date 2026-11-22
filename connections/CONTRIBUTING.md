@@ -27,5 +27,5 @@ needs. The app retains model keys, email passwords and delivery control.
 branch must also require a pull request and code-owner approval; CODEOWNERS
 alone does not enforce that policy. Hashes pin content, not reviewer identity.
 
-While this feature is being tested, target the `community-connections` branch.
+Target the `main` branch. Development uses one branch; reviewed milestones are tagged.
 After its integration, target the repository's maintained release branch.

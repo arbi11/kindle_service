@@ -12,6 +12,11 @@ import uuid
 from urllib.parse import urldefrag
 
 
+# Reading lists, connection filters and the graph share the same origin rules.
+READING_CONNECTION_SQL = """COALESCE(NULLIF(connection_id,''),
+    CASE WHEN kind='video' THEN 'youtube' WHEN is_sample=1 THEN 'raindrop' ELSE 'other' END)"""
+
+
 DEFAULTS = {
     "provider": "openai", "model": "gpt-6-luna", "interests": "",
     "summary_words": 650, "summarize_articles": True, "lookback_days": 3,
@@ -187,6 +192,12 @@ class Store:
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         return self.query("SELECT * FROM items" + where + " ORDER BY published DESC,created_at DESC,id LIMIT ? OFFSET ?",
                           (*params, max(1, min(int(limit), 500)), max(0, min(int(offset), 2**31 - 1))))
+
+    def connection_counts(self):
+        rows = self.query(f"""SELECT {READING_CONNECTION_SQL} AS connection,COUNT(*) AS total FROM items
+            WHERE is_sample=CASE WHEN EXISTS(SELECT 1 FROM items WHERE is_sample=0) THEN 0 ELSE 1 END
+            GROUP BY 1""")
+        return {row['connection']: row['total'] for row in rows}
 
     def editions(self):
         return self.query("""SELECT e.*,(SELECT COUNT(*) FROM edition_items ei WHERE ei.edition_id=e.id) AS item_count,

@@ -1,6 +1,6 @@
 # Knowledge graph and concept pilot
 
-The Knowledge graph tab is an interactive, read-only map of the local library.
+The Knowledge → Graph view is an interactive, read-only map of the local library.
 It includes all saved readings and their source connections. A smaller concept
 pilot adds topics, shared concepts and suggested insights backed by saved passages.
 Automatic concept extraction is not implemented. The pattern
@@ -9,18 +9,18 @@ evidence and explicit applicability, rather than duplicating each source's ideas
 
 ## What can be reviewed
 
-**Knowledge graph** is always visible in the app's main navigation. Nodes can be
+**Knowledge** is always visible in the app's main navigation; Graph and Concepts are views within it. Nodes can be
 dragged, the background pans, and scroll or the zoom buttons changes scale. Fit
 graph restores the full view. Search finds nodes by name or description; selecting
 one focuses it and shows its details, linked nodes and any supporting passages.
 Readings open in the existing full reader. Returning preserves the selected node,
 graph positions, viewport and active filters.
 
-The graph has its own connection dropdown and inclusive Published from / Published
-through filters. Saved publication times are interpreted in the reader's configured
+The left Filter stories selector supplies one shared connection scope for reading,
+Graph and Concepts. The graph retains inclusive Published from / Published through
+filters. Saved publication times are interpreted in the reader's configured
 timezone. Apply filters rebuilds the graph from matching readings, retaining only
-concepts, insights, topics and citations supported by those readings. The left-hand
-connection buttons also filter the graph. Reset clears the connection and dates.
+concepts, insights, topics and citations supported by those readings. Reset dates clears the date range while retaining the selected connection.
 Empty ranges show an explicit empty state; invalid dates produce a clear error.
 
 Connection edges mean "collected through this connection". They do not imply a
@@ -33,8 +33,8 @@ The renderer is the locally bundled vis-network 10.1.5 standalone build, with
 checksums and license texts under `desktop/ui/vendor/vis-network`. The app makes
 no CDN requests or calls to a graph service. The right panel remains Connections.
 
-Library also has Reading and Knowledge views when a local pilot is present. Knowledge
-opens topics, then concepts, then suggested insights with saved source passages.
+Knowledge → Concepts opens topics, then concepts, then suggested insights with
+saved source passages when a local pilot is present.
 Concepts can belong to multiple topics while retaining one identity. Different
 perspectives remain separate insights under a shared concept.
 

@@ -3,13 +3,13 @@
 // All assets and graph data stay on the local app server. No external graph service.
 const KnowledgeGraph = (() => {
   let network=null, nodeSet=null, edgeSet=null, data=null, sequence=0, selected=null, ready=false;
-  let filters={connection:'all',from:'',to:''}, query='', cacheKey='', loadedAt=0, fontScale=null;
+  let filters={from:'',to:''}, query='', cacheKey='', loadedAt=0, fontScale=null;
   const views=new Map();
   const types={connection:'Connection',topic:'Topic',concept:'Concept',insight:'Suggested insight',reading:'Reading'};
   const colors={connection:'#6c7865',topic:'#67805b',concept:'#7796a2',insight:'#b29a6c',reading:'#aab59e'};
   const connectionColors={youtube:'#ad8d84',raindrop:'#8199ad',freedium:'#9a98a0',substack:'#b8a17e',websites:'#7c9d94',other:'#aab59e'};
   const sourceName = id => state.catalogue?.find(c=>c.id===id)?.name || (id==='other'?'Other reading':id);
-  const key = () => [filters.connection,filters.from,filters.to,state.stats.total].join('|');
+  const key = () => [connectionScope,filters.from,filters.to,state.stats.total].join('|');
   const dark = () => document.documentElement.dataset.theme==='dark';
   const nodeTheme = n => ({
     color:{background:n.type==='reading'?(connectionColors[n.connection_id]||colors.reading):colors[n.type],
@@ -27,14 +27,13 @@ const KnowledgeGraph = (() => {
   }
 
   function page() {
-    const options=[['all','All connections'],...(state.catalogue||[]).map(c=>[c.id,c.name]),['other','Other reading']];
-    return `<section class="knowledge-graph-page">${heading('Knowledge graph','Explore your readings, shared concepts and their sources.')}
+    return `<section class="knowledge-graph-page">
+      <p class="knowledge-scope">${esc(connectionName(connectionScope))}</p>
       <form id="graph-filters" class="graph-filters">
-        <label>Connection<select id="graph-connection" name="connection">${options.map(([id,label])=>`<option value="${esc(id)}" ${filters.connection===id?'selected':''}>${esc(label)}</option>`).join('')}</select></label>
         <label>Published from<input id="graph-from" name="from" type="date" value="${esc(filters.from)}"></label>
         <label>Published through<input id="graph-to" name="to" type="date" value="${esc(filters.to)}"></label>
-        <button class="btn secondary small" type="submit">Apply filters</button>
-        <button class="text-btn" type="button" data-graph-action="reset">Reset</button>
+        <button class="btn secondary small" type="submit">Apply dates</button>
+        <button class="text-btn" type="button" data-graph-action="reset">Reset dates</button>
       </form>
       <p class="graph-date-note">Publication dates saved in your library · ${esc(state.settings.timezone)} · Both dates included.</p>
       <div id="graph-status" class="graph-status" role="status" aria-live="polite">Loading your graph…</div>
@@ -61,7 +60,7 @@ const KnowledgeGraph = (() => {
     const ticket=++sequence;
     try {
       if(force||!data||cacheKey!==key()||Date.now()-loadedAt>60000) {
-        const result=await api('/knowledge/graph?'+new URLSearchParams({connection:filters.connection,from:filters.from,to:filters.to}));
+        const result=await api('/knowledge/graph?'+new URLSearchParams({connection:connectionScope,from:filters.from,to:filters.to}));
         if(ticket!==sequence||!canvas.isConnected) return;
         data=result;cacheKey=key();loadedAt=Date.now();
       }
@@ -198,16 +197,15 @@ const KnowledgeGraph = (() => {
 
   function apply(next) {
     unmount();filters=next;selected=null;query='';
-    digestConnection=filters.connection;
     render();
   }
-  function setConnection(connection) {apply({...filters,connection});}
+  function scopeChanged() {unmount();selected=null;query='';}
   function readingQueue() {return (data?.nodes||[]).filter(n=>n.type==='reading').map(n=>items.find(i=>i.id===n.item_id)).filter(Boolean);}
 
   document.addEventListener('submit',event=>{
     if(event.target.id!=='graph-filters')return;event.preventDefault();
     const form=event.target;if(!form.reportValidity())return;
-    const values=new FormData(form);apply({connection:values.get('connection'),from:values.get('from'),to:values.get('to')});
+    const values=new FormData(form);apply({from:values.get('from'),to:values.get('to')});
   });
   document.addEventListener('input',event=>{if(event.target.id==='graph-search')search();});
   document.addEventListener('click',event=>{
@@ -219,10 +217,10 @@ const KnowledgeGraph = (() => {
       return;
     }
     const action=target.dataset.graphAction;
-    if(action==='reset') {apply({connection:'all',from:'',to:''});return;}
+    if(action==='reset') {apply({from:'',to:''});return;}
     if(!network)return;
     if(action==='fit') fitGraph();
     if(action==='zoom-in'||action==='zoom-out') {network.moveTo({scale:Math.min(5,Math.max(.04,network.getScale()*(action==='zoom-in'?1.3:1/1.3))),animation:false});zoomLabel();}
   });
-  return {page,mount,unmount,themeChanged,setConnection,readingQueue,citation:id=>data?.citations.find(c=>c.id===id)};
+  return {page,mount,unmount,themeChanged,scopeChanged,readingQueue,citation:id=>data?.citations.find(c=>c.id===id)};
 })();

@@ -27,6 +27,8 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: agent/package-lock.json
+      - name: Test navigation state
+        run: node --test tests/navigation.test.cjs
       - name: Test Pi reading agent
         working-directory: agent
         run: |

@@ -1,2 +1,2 @@
 """Quib27: a private, local desktop reader."""
-__version__ = "0.2.12"
+__version__ = "0.3.0"

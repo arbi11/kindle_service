@@ -287,6 +287,32 @@ class HTTPTests(unittest.TestCase):
         with self.request("/api/items?status=saved") as response:
             self.assertEqual(len(json.load(response)["items"]), 1)
 
+    def test_connection_choices_cover_history_independently_of_search_and_subscriptions(self):
+        self.app.store.add_item(kind='video', external_id='archived-video', title='Archived engineering',
+                                connection_id='youtube', body_html='<p>Engineering notes.</p>')
+        self.app.store.add_item(kind='article', external_id='archived-bookmark', title='Saved economics',
+                                connection_id='raindrop', body_html='<p>Economic notes.</p>')
+        empty = self.app.store.add_source('substack', 'An empty subscription', 'https://empty.substack.com/feed')
+        with self.request('/api/bootstrap') as response:
+            initial = json.load(response)['reading_connections']
+        self.assertEqual(initial, {'youtube': 1, 'raindrop': 1})
+        with self.request('/api/items?q=economics&kind=article') as response:
+            self.assertEqual(len(json.load(response)['items']), 1)
+        self.app.store.execute('DELETE FROM sources WHERE id=?', (empty,))
+        with self.request('/api/bootstrap') as response:
+            self.assertEqual(json.load(response)['reading_connections'], initial)
+
+    def test_connection_counts_and_graph_agree_for_imports_and_sample_visibility(self):
+        self.app.store.add_item(kind='video', external_id='loose-video', title='Imported video', body_html='<p>Video notes.</p>')
+        self.app.store.add_item(kind='article', external_id='loose-article', title='Imported EPUB chapter', body_html='<p>Chapter.</p>')
+        with self.request('/api/bootstrap') as response:
+            counts = json.load(response)['reading_connections']
+        self.assertEqual(counts, {'youtube': 1, 'other': 1})
+        for connection, count in counts.items():
+            with self.request('/api/knowledge/graph?connection=' + connection) as response:
+                graph = json.load(response)
+            self.assertEqual(graph['stats']['readings'], count)
+
     def test_knowledge_uses_the_private_session_and_never_writes_reading_state(self):
         from knowledge_fixture import populate
         from desktop.knowledge import PILOT_FILE
