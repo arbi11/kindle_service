@@ -1,12 +1,19 @@
 /* Destinations on the left, content in the middle, collection setup on the right. */
 .workspace-shell .digest-brand { margin-bottom: 33px; }
 .workspace-shell .story-filters { padding-top: 23px; margin-top: 26px; }
-.workspace-shell .story-filters label { display: block; }
-.workspace-shell .story-filters select {
-  display: block; width: 100%; min-width: 0; padding: 10px 9px;
-  color: var(--ink); background: var(--paper); border: 1px solid var(--line);
-  border-radius: 6px; font: 12px var(--sans); cursor: pointer;
-}
+.workspace-shell .story-filters .nav-label { font-weight: 400; }
+.connection-filter-root { display: flex; align-items: center; gap: 2px; }
+.workspace-shell .connection-check { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 8px 9px 12px; font-size: 12px; color: var(--muted); cursor: pointer; border-radius: 5px; }
+.connection-filter-root .connection-check { flex: 1; padding-right: 0; color: var(--ink); }
+.connection-check input { width: 14px; height: 14px; margin: 0; flex-shrink: 0; accent-color: var(--ink); cursor: pointer; }
+.connection-check span { min-width: 0; line-height: 1.5; }
+.connection-check:hover { background: var(--pale); }
+.connection-filter-toggle { width: 27px; height: 30px; flex-shrink: 0; }
+.connection-filter-toggle svg { width: 15px; height: 15px; transition: transform .15s; }
+.connection-filter-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.connection-filter-options { margin: 3px 0 0 18px; border-left: 1px solid var(--line); }
+.connection-filter-options[hidden] { display: none; }
+.connection-filter-options .hint { padding: 8px 12px; }
 .workspace-shell .sidebar-utilities {
   display: flex; align-items: center; gap: 4px; margin-top: auto;
   padding-top: 24px; border-top: 0;
@@ -25,6 +32,17 @@
 .reading-tools .search-wrap { flex: 1 1 180px; min-width: 150px; max-width: 260px; }
 .reading-tools .search-wrap input { width: 100%; font-size: 12px; }
 .workspace-shell .digest-toolbar { min-height: 31px; padding-bottom: 13px; }
+.workspace-shell .library-grid { grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); padding-top: 20px; }
+.workspace-shell .reading-card { position: relative; min-width: 0; cursor: default; transition: border-color .15s; }
+.workspace-shell .reading-card:hover { transform: none; border-color: var(--muted); }
+.reading-card .article-meta { overflow-wrap: anywhere; }
+.card-title { display: block; width: 100%; padding: 0; background: transparent; color: var(--ink); font: inherit; letter-spacing: inherit; text-align: left; }
+.card-title::after { content: ''; position: absolute; inset: 0; border-radius: 11px; }
+.card-title:focus-visible { outline: 0; }
+.card-title:focus-visible::after { outline: 2px solid var(--ink); outline-offset: 3px; }
+.reading-card .card-footer { flex-wrap: wrap; gap: 6px; }
+.reading-card .read-label { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.reading-card .card-footer .icon-btn { position: relative; z-index: 1; }
 .workspace-shell .reading-editions { margin-top: 4px; border-top: 0; padding-top: 0; }
 .reading-editions .section-heading { align-items: flex-start; gap: 18px; flex-wrap: wrap; }
 .reading-editions .section-note { font-size: 12px; margin-top: 8px; padding: 0; background: transparent; color: var(--muted); border: 0; }
@@ -48,8 +66,10 @@
   .workspace-shell .sidebar-settings { flex: none; padding: 10px; }
   .workspace-shell .sidebar-settings span { display: none; }
   .workspace-shell .story-filters { padding-top: 18px; }
-  .workspace-shell .story-filters label { font-size: 0; margin: 0; }
-  .workspace-shell .story-filters select { padding: 9px 0; font-size: 11px; }
+  .workspace-shell .story-filters { overflow: visible; position: relative; }
+  .workspace-shell .story-filters .connection-check { padding: 9px 4px; }
+  .connection-filter-root .connection-check span { display: none; }
+  .connection-filter-options { position: absolute; left: 43px; top: 45px; width: 185px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--side); box-shadow: 0 6px 20px #0002; }
   .reading-view-bar { flex-wrap: wrap; }
   .reading-tools .search-wrap { max-width: none; flex-basis: 100%; }
 }

@@ -122,6 +122,26 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual([c["id"] for c in result["citations"]], ["memory-source"])
         self.assertNotIn("concept:review", {n["id"] for n in result["nodes"]})
 
+    def test_multiple_connections_combine_evidence_and_still_apply_dates(self):
+        self.store.execute("UPDATE items SET published='2026-11-20T12:00:00+00:00'")
+        before = self.store.query('SELECT * FROM items ORDER BY id')
+        result = graph(self.store, connection='youtube,raindrop', start='2026-11-20', end='2026-11-20')
+        self.assertEqual(result['stats']['readings'], 2)
+        self.assertEqual(result['stats']['mapped'], 2)
+        self.assertEqual({c['id'] for c in result['citations']}, {'memory-source', 'review-source'})
+        self.assertEqual({n['connection_id'] for n in result['nodes'] if n['type'] == 'reading'}, {'youtube', 'raindrop'})
+        self.assertEqual(graph(self.store, connection='youtube,raindrop', start='2026-11-21')['nodes'], [])
+        self.assertEqual(self.store.query('SELECT * FROM items ORDER BY id'), before)
+
+    def test_no_connections_means_empty_graph_without_ancestors_or_evidence(self):
+        before = self.store.query('SELECT * FROM items ORDER BY id')
+        result = graph(self.store, connection='none')
+        self.assertEqual(result['stats']['readings'], 0)
+        self.assertEqual(result['stats']['library'], 3)
+        for field in ['nodes', 'edges', 'citations', 'insights', 'concepts', 'topics']:
+            self.assertEqual(result[field], [])
+        self.assertEqual(self.store.query('SELECT * FROM items ORDER BY id'), before)
+
     def test_date_bounds_are_inclusive_in_the_readers_timezone(self):
         self.store.execute("UPDATE items SET published='2026-07-01T00:00:00+00:00'")
         item = self.manifest["citations"][0]["item_id"]
@@ -135,7 +155,8 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(graph(self.store, connection="youtube", start="2026-11-02", end="2026-11-02")["nodes"], [])
 
     def test_invalid_dates_reversed_ranges_and_connections_are_rejected(self):
-        for kwargs in [{"start": "2026-02-30"}, {"end": "yesterday"}, {"start": "2026-11-21", "end": "2026-11-20"}, {"connection": "bad connection"}]:
+        for kwargs in [{"start": "2026-02-30"}, {"end": "yesterday"}, {"start": "2026-11-21", "end": "2026-11-20"}, {"connection": "bad connection"},
+                       {'connection': 'youtube,,raindrop'}, {'connection': 'all,youtube'}, {'connection': 'youtube,none'}, {'connection': ','.join(['youtube'] * 51)}]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 graph(self.store, **kwargs)
 

@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.3.0 build runs on
+Quib27 is a free proprietary desktop reader. This 0.3.1 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -146,19 +146,23 @@ releases include both, so readers need no separate Node installation. See
 
 ## Workspace design
 
-The left panel has two destinations: **Reading** and **Knowledge**. **Settings**
+The left panel has **Today**, **Library** and **Knowledge**. **Settings**
 and the sun/moon appearance switch sit at the bottom. Version and library location
 are in **Settings → About**. Development uses `main`; the `v0.2.12` tag preserves
-the complete desktop milestone before this navigation cleanup.
+the complete desktop milestone before the navigation cleanup.
 
-**Reading → Stories** combines the compact Daily Quib list with search and the
-existing article/video and saved filters. The date heads the page; the list covers
-the saved history, ordered by most recent publication. Selecting a story opens the
-full reader directly. Back restores the filters, scroll and keyboard focus.
-**Add article** accepts a single public article URL without opening connector setup.
+**Today** is the compact Daily Quib list, headed by the current date. It covers
+the saved history, ordered by most recent publication, rather than only today's
+articles. Selecting a story opens the full reader directly. Back restores the
+selected connections, scroll and keyboard focus.
 
-**Reading → Editions** contains saved editions, EPUB import and preparation. Open an
-edition to read its stories, export EPUB/HTML or preview and send it. The connection
+**Library → Stories** shows the same collection as cards with search, article/video
+and saved filters, bookmark buttons and reading status. Library's search and type
+filters stay in Library when visiting Today, Knowledge or Settings. **Add article**
+accepts a single public article URL without opening connector setup.
+
+**Library → Editions** contains saved editions, EPUB import and preparation. Open
+an edition to read its stories, export EPUB/HTML or preview and send it. The connection
 filter is hidden here because editions can contain stories from several connections.
 
 **Knowledge** combines the interactive **Graph** and the existing **Concepts** pilot.
@@ -167,12 +171,13 @@ opens topics, shared ideas, suggested insights and their cited passages. Coverag
 counts distinguish mapped concepts from readings with source links only. The pilot
 does not automatically extract concepts from the remaining library.
 
-**Filter stories** is one compact connection selector, shown only in Stories and
-Knowledge. Both use the same selected connection. Its choices come from the entire
-visible library, including retained reading from disconnected sources; searches do
-not remove choices. The graph's inclusive publication-date range is separate, and
-Reset dates preserves the selected connection. Reading search/type/bookmark filters
-stay in Reading when visiting Knowledge or Settings.
+**Filter stories → All connections** has an expandable checkbox list, shared by
+Today, Library stories, Graph and Concepts. Select any combination of connections;
+All connections selects or clears the whole list and shows a partial check when
+only some are selected. Clearing every checkbox shows an explicit empty view.
+Choices come from the entire visible library, including retained reading from
+disconnected sources; searches do not remove choices. The graph's inclusive
+publication-date range is separate. Reset dates keeps the selected connections.
 
 The right **Connections** panel retains inline setup, fetch, pause/resume and
 disconnection. **Manage connections** opens the full overview and reviewed catalogue.
@@ -223,8 +228,8 @@ and preserve your current reading position and unsaved form entries.
    selected collections. Substack takes a publication address; Websites & blogs
    accepts a site or feed address. These feeds and Freedium need no account.
    **Manage connections → Browse connections**
-   shows the reviewed catalogue. Reading → Stories retains Add article by URL.
-4. Choose **Fetch articles** beside a source, or **Prepare edition** in Reading → Editions
+   shows the reviewed catalogue. Library → Stories retains Add article by URL.
+4. Choose **Fetch articles** beside a source, or **Prepare edition** in Library → Editions
    to check all enabled sources. Reading is collected, summarized when applicable,
    and saved locally. Your reading budget and per-run cap keep editions manageable.
 5. Select an article to open the full reader directly. Use the

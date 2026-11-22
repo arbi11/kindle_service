@@ -381,6 +381,14 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(result["stats"]["readings"], 1)
             self.assertEqual(result["stats"]["mapped"], 1)
             self.assertEqual([c["id"] for c in result["citations"]], ["memory-source"])
+        with self.request('/api/knowledge/graph?connection=youtube%2Craindrop') as response:
+            result = json.load(response)
+            self.assertEqual(result['stats']['readings'], 2)
+            self.assertEqual({c['id'] for c in result['citations']}, {'memory-source', 'review-source'})
+        with self.request('/api/knowledge/graph?connection=none') as response:
+            result = json.load(response)
+            self.assertEqual(result['stats']['readings'], 0)
+            self.assertEqual(result['nodes'], [])
         with self.assertRaises(HTTPError) as error:
             self.request("/api/knowledge/graph?from=2026-11-21&to=2026-11-01")
         self.assertEqual(error.exception.code, 400)

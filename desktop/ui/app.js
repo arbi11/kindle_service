@@ -37,17 +37,18 @@ const icons = {
   graph:'<circle cx="5" cy="6" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="18" r="2"/><path d="m7 6 9-1M6 8l5 8m6-9-4 9"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${icons[name] || icons.article}</svg>`;
-let state = null, items = [], view = 'reading', currentItem = null, currentEdition = null;
+let state = null, items = [], view = 'today', currentItem = null, currentEdition = null;
 let filters = {kind:'all',status:'all',q:''}, readerTab = 'summary', readerTheme = document.documentElement.dataset.theme || 'light';
-let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'reading';
+let readerSize = Number(localStorage.getItem('readerSize') || 20), lastView = 'today';
 let refreshEpoch = 0;
 let activeJob = null, knownJobIds = new Set(), searchTimer;
 let connectionScope = 'all', readerReturnItemId = null, readerReturnScroll = 0;
+let connectionFiltersExpanded = false;
 let connectionsTab = 'yours';
 let expandedConnection = null, connectionRailScroll = 0;
 const connectionDrafts = new Map();
 let raindropCollections = [];
-let knowledge = null, readingMode = 'stories', knowledgeMode = 'graph', settingsSection = 'preferences';
+let knowledge = null, libraryMode = 'stories', knowledgeMode = 'graph', settingsSection = 'preferences';
 let knowledgeTopic = null, knowledgeConcept = null, knowledgeQuery = '';
 const settingsDrafts = new Map();
 let readerCitation = null, readerReturnFocus = null;
@@ -105,7 +106,7 @@ const sample = item => item.is_sample ? '<span class="sample-tag">SAMPLE</span>'
 
 async function refresh(renderPage=true) {
   const epoch=++refreshEpoch;
-  const query = {...(view==='reading'&&readingMode==='stories'?filters:{kind:'all',status:'all',q:''}), limit:200};
+  const query = {...(view==='library'&&libraryMode==='stories'?filters:{kind:'all',status:'all',q:''}), limit:200};
   const [data, library] = await Promise.all([api('/bootstrap'), api('/items?' + new URLSearchParams(query))]);
   const allItems = library.items;
   let page = library;
@@ -124,23 +125,49 @@ async function navigation(next) {
   captureSettingsDraft();
   if(next==='delivery') {next='settings';settingsSection='delivery';}
   view=next;currentItem=null;currentEdition=null;
-  if(next==='reading') readingMode='stories';
+  if(next==='library') libraryMode='stories';
   window.scrollTo(0,0);
   try {await refresh();} catch(error) {toast(error.message,true);}
 }
 function connectionName(id) {
   return id==='all'?'All connections':state.catalogue?.find(c=>c.id===id)?.name || (id==='article'?'Saved articles':id==='other'?'Other reading':id);
 }
-function connectionFilter() {
+function connectionChoices() {
   const ids=Object.keys(state.reading_connections || {});
   const ordered=(state.catalogue||[]).filter(c=>ids.includes(c.id)).map(c=>c.id);
   ordered.push(...ids.filter(id=>!ordered.includes(id)).sort());
-  if(connectionScope!=='all'&&!ordered.includes(connectionScope)) ordered.push(connectionScope);
-  return `<div class="story-filters"><label class="nav-label" for="story-connection">Filter stories</label>
-    <select id="story-connection" aria-label="Filter stories by connection">${['all',...ordered].map(id=>`<option value="${esc(id)}" ${connectionScope===id?'selected':''}>${esc(connectionName(id))}</option>`).join('')}</select></div>`;
+  if(!['all','none'].includes(connectionScope)) for(const id of connectionScope.split(',')) if(!ordered.includes(id)) ordered.push(id);
+  return ordered;
+}
+function matchesConnection(id) {
+  return connectionScope==='all'||connectionScope!=='none'&&connectionScope.split(',').includes(id);
+}
+function connectionScopeLabel() {
+  if(connectionScope==='all') return 'All connections';
+  if(connectionScope==='none') return 'No connections selected';
+  const ids=connectionScope.split(',');
+  return ids.length>2?`${ids.length} connections`:ids.map(connectionName).join(', ');
+}
+function connectionFilter() {
+  const ordered=connectionChoices();
+  return `<section class="story-filters" aria-labelledby="story-filter-label"><h2 class="nav-label" id="story-filter-label">Filter stories</h2>
+    <div class="connection-checklist" role="group" aria-label="Filter stories by connection">
+      <div class="connection-filter-root"><label class="connection-check"><input id="story-connection-all" type="checkbox" ${connectionScope==='all'?'checked':''} aria-label="All connections"><span>All connections</span></label><button class="icon-btn connection-filter-toggle" type="button" data-action="toggle-story-connections" aria-expanded="${connectionFiltersExpanded}" aria-controls="story-connection-options" aria-label="${connectionFiltersExpanded?'Hide':'Show'} connections">${icon('chevron')}</button></div>
+      <div id="story-connection-options" class="connection-filter-options" ${connectionFiltersExpanded?'':'hidden'}>${ordered.map(id=>`<label class="connection-check"><input id="story-connection-${esc(id)}" type="checkbox" data-story-connection="${esc(id)}" value="${esc(id)}" ${matchesConnection(id)?'checked':''}><span>${esc(connectionName(id))}</span></label>`).join('')||'<p class="hint">No collected stories yet.</p>'}</div>
+    </div></section>`;
 }
 function setConnectionScope(id) {
-  connectionScope=id;KnowledgeGraph.scopeChanged();
+  connectionScope=Array.isArray(id)?[...new Set(id)].sort().join(',')||'none':id;
+  KnowledgeGraph.scopeChanged();
+}
+function toggleStoryConnection(id, checked) {
+  const ids=connectionChoices(), selected=new Set(ids.filter(matchesConnection));
+  if(checked) selected.add(id);else selected.delete(id);
+  setConnectionScope(ids.every(id=>selected.has(id))?'all':[...selected]);
+}
+function syncConnectionCheckbox() {
+  const checkbox=$('#story-connection-all');
+  if(checkbox) checkbox.indeterminate=!['all','none'].includes(connectionScope);
 }
 function modeTabs(action,label,options,selected) {
   return `<div class="tabs section-tabs" role="group" aria-label="${label}">${options.map(([id,title])=>`<button type="button" data-action="${action}" data-value="${id}" class="${selected===id?'active':''}" aria-pressed="${selected===id}">${title}</button>`).join('')}</div>`;
@@ -160,8 +187,8 @@ function render() {
   if (currentItem) { renderReader(); return; }
   KnowledgeGraph.unmount();
   captureConnectionDraft();
-  const pages = [['reading','book','Reading'],['knowledge','graph','Knowledge']];
-  const page = currentEdition ? editionPage() : ({reading:readingPage,knowledge:knowledgePage,connections:connectionsPage,settings:settingsPage}[view] || readingPage)();
+  const pages = [['today','home','Today'],['library','book','Library'],['knowledge','graph','Knowledge']];
+  const page = currentEdition ? editionPage() : ({today:todayPage,library:libraryPage,knowledge:knowledgePage,connections:connectionsPage,settings:settingsPage}[view] || todayPage)();
   $('#app').innerHTML = `
     <div class="shell digest-shell workspace-shell ${!currentEdition&&view==='knowledge'?'knowledge-shell':''}">
       <aside class="sidebar">
@@ -169,7 +196,7 @@ function render() {
         <nav class="nav primary-nav" aria-label="Main navigation">
           ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
         </nav>
-        ${!currentEdition&&(view==='knowledge'||view==='reading'&&readingMode==='stories')?connectionFilter():''}
+        ${!currentEdition&&(view==='today'||view==='knowledge'||view==='library'&&libraryMode==='stories')?connectionFilter():''}
         <div class="sidebar-foot sidebar-utilities">
           <button class="sidebar-settings ${view==='settings'?'active':''}" data-nav="settings" aria-label="Settings" ${view==='settings'?'aria-current="page"':''}>${icon('settings')}<span>Settings</span></button>
           ${themeButton(true)}
@@ -179,6 +206,7 @@ function render() {
     </div>`;
   restoreConnectionDraft();
   restoreSettingsDraft();
+  syncConnectionCheckbox();
   updateTask();
   if(view==='knowledge'&&knowledgeMode==='graph'&&!currentEdition) KnowledgeGraph.mount();
 }
@@ -204,7 +232,7 @@ function itemConnection(item) {
   // Offline examples demonstrate the two connections without connecting an account.
   return item.is_sample ? 'raindrop' : 'other';
 }
-function connectionItems() { return items.filter(item => connectionScope === 'all' || itemConnection(item) === connectionScope); }
+function connectionItems() { return items.filter(item => matchesConnection(itemConnection(item))); }
 function digestItems() {
   return connectionItems()
     .sort((a,b) => (Date.parse(b.published) || Date.parse(b.created_at) || 0) - (Date.parse(a.published) || Date.parse(a.created_at) || 0));
@@ -273,19 +301,31 @@ async function refreshConnections() {
     renderConnectionRail();
   } else render();
 }
-function readingPage() {
+function todayPage() {
   const date=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',timeZone:state.settings.timezone});
-  const tabs=modeTabs('reading-mode','Reading views',[['stories','Stories'],['editions','Editions']],readingMode);
-  const content=readingMode==='editions'?editionsPage():storiesPage();
   return `<div class="digest-layout"><header class="digest-heading"><div class="date">${icon('sun')} ${esc(date)}</div><h1>The Daily Quib</h1></header>
-    <div class="reading-view-bar">${tabs}${readingMode==='stories'?`<button class="text-btn" data-action="add-article">${icon('plus')} Add article</button>`:''}</div>${content}</div>`;
+    <section class="digest-feed" aria-label="Stories">${storiesContext()}<div class="digest-list">${digestItems().map(digestArticle).join('')||storiesEmpty()}</div></section></div>`;
 }
-function storiesPage() {
+function libraryPage() {
+  const modes=modeTabs('library-mode','Library views',[['stories','Stories'],['editions','Editions']],libraryMode);
+  return heading('Your library','All your saved reading.')+`<div class="reading-view-bar">${modes}${libraryMode==='stories'?`<button class="text-btn" data-action="add-article">${icon('plus')} Add article</button>`:''}</div>`+(libraryMode==='editions'?editionsPage():libraryStories());
+}
+function storiesContext() {
+  const count=digestItems().length;
+  return `<div class="digest-toolbar"><div class="digest-context"><span>${esc(connectionScopeLabel())}</span><span class="meta-divider">·</span><span>${count} ${count===1?'story':'stories'}</span></div><span>Most recent</span></div>`;
+}
+function storiesEmpty() {
+  const filtered=view==='library'&&(filters.q||filters.kind!=='all'||filters.status!=='all');
+  const message=connectionScope==='none'?'Choose at least one connection in Filter stories.':filtered?'Try another search or reading filter.':connectionScope==='all'?'Articles from your connections will appear here.':'No stories from the selected connections yet.';
+  return `<div class="digest-empty"><h2>No matching stories</h2><p>${message}</p></div>`;
+}
+function libraryStories() {
   const articles=digestItems();
-  return `<section class="digest-feed" aria-label="Stories">
-    <div class="library-tools reading-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Search stories…" value="${esc(filters.q)}" aria-label="Search your reading"></div></div>
-    <div class="digest-toolbar"><div class="digest-context"><span>${esc(connectionName(connectionScope))}</span><span class="meta-divider">·</span><span>${articles.length} ${articles.length===1?'story':'stories'}</span></div><span>Most recent</span></div>
-    <div class="digest-list">${articles.map(digestArticle).join('')||`<div class="digest-empty"><h2>No matching stories</h2><p>${filters.q||filters.kind!=='all'||filters.status!=='all'?'Try another search or reading filter.':connectionScope==='all'?'Articles from your connections will appear here.':'No stories from this connection yet.'}</p></div>`}</div></section>`;
+  return `<section aria-label="Library stories"><div class="library-tools reading-tools">${tabs()}<div class="search-wrap">${icon('search')}<input id="search" placeholder="Search stories…" value="${esc(filters.q)}" aria-label="Search your library"></div></div>
+    ${storiesContext()}${articles.length?`<div class="library-grid">${articles.map(libraryCard).join('')}</div>`:storiesEmpty()}</section>`;
+}
+function libraryCard(item) {
+  return `<article class="reading-card ${item.is_read?'is-read':''}" data-item-id="${esc(item.id)}"><div class="article-meta">${sourceIcon(item.kind)}<span>${esc(item.author || connectionName(itemConnection(item)))}</span>${sample(item)}</div><h3><button class="card-title" id="title-${esc(item.id)}" data-action="read" data-id="${esc(item.id)}">${esc(item.title)}</button></h3><div class="excerpt">${esc(excerpt(item))}</div><div class="card-footer"><span>${minutes(item.words)} min read · ${shortDate(item.published)}</span><span class="read-label">${item.is_read?`${icon('check')} Read`:'Unread'}</span><button class="icon-btn ${item.starred?'saved':''}" data-action="star" data-id="${esc(item.id)}" aria-label="${item.starred?'Unsave':'Save'} ${esc(item.title)}">${icon('bookmark')}</button></div></article>`;
 }
 function editionsPage() {
   return `<section class="edition-archive reading-editions"><div class="section-heading"><div><h2>Your editions</h2><p class="section-note">Saved reading editions for the app, email or Kindle.</p></div><div class="inline-actions"><button class="btn secondary small" data-action="upload">${icon('download')} Import EPUB</button><button class="btn secondary small" data-action="prepare">${icon('plus')} Prepare edition</button></div></div>
@@ -296,7 +336,7 @@ function knowledgePage() {
   return heading('Knowledge','Explore your reading and the ideas it connects.')+modeTabs('knowledge-mode','Knowledge views',options,knowledgeMode)+(knowledgeMode==='graph'?KnowledgeGraph.page():conceptsPage());
 }
 function knowledgeScope() {
-  const citations = new Map((knowledge.citations||[]).filter(c=>connectionScope==='all'||c.connection_id===connectionScope).map(c=>[c.id,c]));
+  const citations = new Map((knowledge.citations||[]).filter(c=>matchesConnection(c.connection_id)).map(c=>[c.id,c]));
   const insights = new Map((knowledge.insights||[]).filter(i=>i.citation_ids.some(id=>citations.has(id))).map(i=>[i.id,i]));
   const concepts = (knowledge.concepts||[]).filter(c=>c.insight_ids.some(id=>insights.has(id)));
   const topics = (knowledge.topics||[]).filter(t=>t.concept_ids.some(id=>concepts.some(c=>c.id===id)));
@@ -309,7 +349,7 @@ function conceptsPage() {
   const scoped = knowledgeScope();
   const topic = scoped.topics.find(t=>t.id===knowledgeTopic);
   const concept = scoped.concepts.find(c=>c.id===knowledgeConcept&&(!topic||topic.concept_ids.includes(c.id)));
-  const connection = connectionScope==='all'?'All connections':state.catalogue?.find(c=>c.id===connectionScope)?.name||'Saved reading';
+  const connection = connectionScopeLabel();
   const covered = new Set(Array.from(scoped.citations.values()).map(c=>c.item_id)).size;
   const coverage = connectionScope==='all'?`Pilot: ${knowledge.stats.readings} of ${knowledge.stats.library} saved pieces`:`Showing ${covered} of ${knowledge.stats.readings} pilot pieces`;
   result += `<section class="knowledge-view"><div class="knowledge-intro"><h2>Concepts</h2><p>Explore topics, follow a concept, then check the passages behind each suggested insight.</p><p class="knowledge-coverage">${coverage} · ${esc(connection)}</p></div>
@@ -334,7 +374,7 @@ function knowledgeResults(scoped,topic,concept) {
     return `<header class="knowledge-detail-heading"><span class="small-label">Concept</span><h3>${esc(concept.title)}</h3><p>${esc(concept.description)}</p>${relatedTopics.length>1?`<div class="knowledge-shared">Appears in ${relatedTopics.map(t=>`<button class="text-btn" data-action="knowledge-topic" data-id="${esc(t.id)}">${esc(t.title)}</button>`).join('<span>·</span>')}</div>`:''}</header><p class="knowledge-draft-note">AI drafts for review. These describe source perspectives; they have not been independently verified or saved as your own conclusions.</p>${concept.insight_ids.filter(id=>scoped.insights.has(id)).map(id=>knowledgeInsight(scoped.insights.get(id),scoped)).join('')}`;
   }
   if(topic) return `<header class="knowledge-detail-heading"><span class="small-label">Topic</span><h3>${esc(topic.title)}</h3><p>${esc(topic.question)}</p></header><div class="knowledge-rows">${scoped.concepts.filter(c=>topic.concept_ids.includes(c.id)).map(c=>knowledgeConceptRow(c,scoped)).join('')}</div>`;
-  return `<div class="knowledge-rows">${scoped.topics.map(t=>`<button class="knowledge-row knowledge-topic" data-action="knowledge-topic" data-id="${esc(t.id)}"><span><strong>${esc(t.title)}</strong><span>${esc(t.question)}</span><small>${scoped.concepts.filter(c=>t.concept_ids.includes(c.id)).length} concepts</small></span>${icon('arrow')}</button>`).join('')||'<p class="knowledge-empty">The pilot has no readings from this connection. Select All connections to explore it.</p>'}</div><p class="knowledge-footnote">${scoped.topics.length} topics · ${scoped.concepts.length} reusable concepts · ${scoped.insights.size} suggested insights. A concept can belong to more than one topic.</p>`;
+  return `<div class="knowledge-rows">${scoped.topics.map(t=>`<button class="knowledge-row knowledge-topic" data-action="knowledge-topic" data-id="${esc(t.id)}"><span><strong>${esc(t.title)}</strong><span>${esc(t.question)}</span><small>${scoped.concepts.filter(c=>t.concept_ids.includes(c.id)).length} concepts</small></span>${icon('arrow')}</button>`).join('')||'<p class="knowledge-empty">No mapped readings from the selected connections. Choose other connections to explore the pilot.</p>'}</div><p class="knowledge-footnote">${scoped.topics.length} topics · ${scoped.concepts.length} reusable concepts · ${scoped.insights.size} suggested insights. A concept can belong to more than one topic.</p>`;
 }
 function knowledgeConceptRow(concept,scoped) {
   const sources = new Set(concept.insight_ids.flatMap(id=>(scoped.insights.get(id)?.citation_ids||[]).flatMap(cid=>scoped.citations.has(cid)?[scoped.citations.get(cid).item_id]:[])));
@@ -417,7 +457,7 @@ function preferencesPage() {
 }
 function deliveryPage() {
   const s=state.settings;
-  return `<div class="settings-layout"><form id="delivery-form"><section class="form-card"><h2>Where do you like to read?</h2><p class="description">Every edition is available here. Choose additional ways to receive it.</p><div class="form-grid"><div class="field full">${check('email_enabled','A personal newsletter','The entire edition, beautifully formatted in the email body.',s.email_enabled)}</div>${field('email_to','Newsletter email address',s.email_to,'email','Separate multiple addresses with commas.','full')}<div class="field full" style="margin-top:8px">${check('kindle_enabled','Send to Kindle','A distraction-free EPUB attachment for your Kindle library.',s.kindle_enabled)}</div>${field('kindle_to','Send-to-Kindle address',s.kindle_to,'text','Add your sender to Amazon’s Approved Personal Document E-mail List.','full')}</div></section><section class="form-card"><h2>Sent through your own email.</h2><p class="description">Use your mail provider’s SMTP details. For Gmail, use an App Password.</p><div class="form-grid">${field('smtp_host','SMTP server',s.smtp_host)}${field('smtp_port','Port',s.smtp_port,'number','465 for secure SMTP, or 587 with STARTTLS.')}${field('smtp_username','Email / username',s.smtp_username,'email')}${field('smtp_sender','Sender email',s.smtp_sender,'email','Leave blank to use your username.')}${credential('smtp_password','App password','Your mail provider’s app password','Encrypted transport is required for all delivery connections.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-smtp">${icon('check')} Check connection</button><span class="hint">Signs in without sending a message.</span></div></section><section class="form-card"><h2>A rhythm that fits your day.</h2><p class="description">The app prepares one edition after a missed slot when the laptop wakes up.</p><div class="form-grid">${field('timezone','Timezone',s.timezone,'text','For example: Asia/Kolkata or America/New_York.')}${field('delivery_times','Preparation times',s.delivery_times.join(', '),'text','24-hour times, separated by commas. Up to four.')}<div class="field full">${check('schedule_enabled','Prepare editions automatically','Keep Quib27 running in the background, with your laptop awake and connected.',s.schedule_enabled)}</div><div class="field full">${check('auto_send','Send each scheduled edition automatically','Use the email and Kindle destinations enabled above.',s.auto_send)}</div><div class="field full">${check('autostart','Launch at login','Starts in the system tray so your reading routine can continue.',state.autostart)}</div></div><div class="setting-info">Closing the window keeps the app in the tray when a schedule is enabled. Choose Quit in the tray menu to stop it.</div></section><div class="form-actions"><button class="btn" type="submit">Save delivery settings ${icon('check')}</button></div></form><aside class="settings-rail"><h3 class="rail-heading">Read wherever feels right.</h3><p>Receive an edition in your inbox, or let your Kindle hold the reading for later. You can always open it here, too.</p><ul class="privacy-list"><li>${icon('check')} Full newsletter in the email</li><li>${icon('check')} EPUB attachment for Kindle</li><li>${icon('check')} Delivery history on this device</li><li>${icon('check')} No repeated successful sends</li></ul><p class="footnote">Your mail server confirms acceptance. Kindle processing and inbox delivery happen after that, through your email provider and Amazon.</p></aside></div><section class="form-card" style="margin-top:28px"><h2>Delivery history</h2><p class="description">A record of what your mail server accepted.</p>${state.deliveries.length?`<table class="delivery-history"><thead><tr><th>Edition</th><th>Destination</th><th>Status</th><th>When</th></tr></thead><tbody>${state.deliveries.map(d=>`<tr><td>${esc(d.edition_title || 'Edition')}</td><td class="target">${icon(d.channel==='kindle'?'kindle':'mail')} ${esc(d.target)}</td><td><span class="status-chip ${d.status==='sent'?'':'warn'}">${esc(d.status==='sent'?'Accepted by mail server':d.status)}</span>${d.message&&d.status!=='sent'?`<p class="history-error">${esc(d.message)}</p>`:''}${d.status==='uncertain'?`<div class="inline-actions" style="margin-top:9px"><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="sent">Received it</button><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="retry">Allow retry</button></div>`:''}</td><td>${shortDate(d.created_at)}<br>${timeOf(d.created_at)}</td></tr>`).join('')}</tbody></table>`:'<p class="intro-line">Your first delivery will appear here. Open an edition in Reading to preview and send it.</p>'}</section>`;
+  return `<div class="settings-layout"><form id="delivery-form"><section class="form-card"><h2>Where do you like to read?</h2><p class="description">Every edition is available here. Choose additional ways to receive it.</p><div class="form-grid"><div class="field full">${check('email_enabled','A personal newsletter','The entire edition, beautifully formatted in the email body.',s.email_enabled)}</div>${field('email_to','Newsletter email address',s.email_to,'email','Separate multiple addresses with commas.','full')}<div class="field full" style="margin-top:8px">${check('kindle_enabled','Send to Kindle','A distraction-free EPUB attachment for your Kindle library.',s.kindle_enabled)}</div>${field('kindle_to','Send-to-Kindle address',s.kindle_to,'text','Add your sender to Amazon’s Approved Personal Document E-mail List.','full')}</div></section><section class="form-card"><h2>Sent through your own email.</h2><p class="description">Use your mail provider’s SMTP details. For Gmail, use an App Password.</p><div class="form-grid">${field('smtp_host','SMTP server',s.smtp_host)}${field('smtp_port','Port',s.smtp_port,'number','465 for secure SMTP, or 587 with STARTTLS.')}${field('smtp_username','Email / username',s.smtp_username,'email')}${field('smtp_sender','Sender email',s.smtp_sender,'email','Leave blank to use your username.')}${credential('smtp_password','App password','Your mail provider’s app password','Encrypted transport is required for all delivery connections.')}</div><div class="form-actions"><button class="btn secondary small" type="button" data-action="test-smtp">${icon('check')} Check connection</button><span class="hint">Signs in without sending a message.</span></div></section><section class="form-card"><h2>A rhythm that fits your day.</h2><p class="description">The app prepares one edition after a missed slot when the laptop wakes up.</p><div class="form-grid">${field('timezone','Timezone',s.timezone,'text','For example: Asia/Kolkata or America/New_York.')}${field('delivery_times','Preparation times',s.delivery_times.join(', '),'text','24-hour times, separated by commas. Up to four.')}<div class="field full">${check('schedule_enabled','Prepare editions automatically','Keep Quib27 running in the background, with your laptop awake and connected.',s.schedule_enabled)}</div><div class="field full">${check('auto_send','Send each scheduled edition automatically','Use the email and Kindle destinations enabled above.',s.auto_send)}</div><div class="field full">${check('autostart','Launch at login','Starts in the system tray so your reading routine can continue.',state.autostart)}</div></div><div class="setting-info">Closing the window keeps the app in the tray when a schedule is enabled. Choose Quit in the tray menu to stop it.</div></section><div class="form-actions"><button class="btn" type="submit">Save delivery settings ${icon('check')}</button></div></form><aside class="settings-rail"><h3 class="rail-heading">Read wherever feels right.</h3><p>Receive an edition in your inbox, or let your Kindle hold the reading for later. You can always open it here, too.</p><ul class="privacy-list"><li>${icon('check')} Full newsletter in the email</li><li>${icon('check')} EPUB attachment for Kindle</li><li>${icon('check')} Delivery history on this device</li><li>${icon('check')} No repeated successful sends</li></ul><p class="footnote">Your mail server confirms acceptance. Kindle processing and inbox delivery happen after that, through your email provider and Amazon.</p></aside></div><section class="form-card" style="margin-top:28px"><h2>Delivery history</h2><p class="description">A record of what your mail server accepted.</p>${state.deliveries.length?`<table class="delivery-history"><thead><tr><th>Edition</th><th>Destination</th><th>Status</th><th>When</th></tr></thead><tbody>${state.deliveries.map(d=>`<tr><td>${esc(d.edition_title || 'Edition')}</td><td class="target">${icon(d.channel==='kindle'?'kindle':'mail')} ${esc(d.target)}</td><td><span class="status-chip ${d.status==='sent'?'':'warn'}">${esc(d.status==='sent'?'Accepted by mail server':d.status)}</span>${d.message&&d.status!=='sent'?`<p class="history-error">${esc(d.message)}</p>`:''}${d.status==='uncertain'?`<div class="inline-actions" style="margin-top:9px"><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="sent">Received it</button><button class="text-btn" data-action="resolve-delivery" data-id="${d.id}" data-value="retry">Allow retry</button></div>`:''}</td><td>${shortDate(d.created_at)}<br>${timeOf(d.created_at)}</td></tr>`).join('')}</tbody></table>`:'<p class="intro-line">Your first delivery will appear here. Open an edition in Library to preview and send it.</p>'}</section>`;
 }
 function editionPage() {
   const e=currentEdition, words=e.items.reduce((sum,i)=>sum+i.words,0);
@@ -567,15 +607,22 @@ document.addEventListener('click',async event=>{
   try {
     if(target.dataset.connection) {
       setConnectionScope(target.dataset.connection);
+      connectionFiltersExpanded=true;
       filters={kind:'all',status:'all',q:''};
-      await navigation('reading');
+      await navigation('today');
       return;
     }
     if(target.dataset.nav) {await navigation(target.dataset.nav);return;}
     if(target.dataset.filter) {filters[target.dataset.filter]=target.dataset.value;await refresh();return;}
     const a=target.dataset.action,id=target.dataset.id;
     if(a==='close-modal') dialog.close();
-    else if(a==='reading-mode') {readingMode=target.dataset.value==='editions'?'editions':'stories';await refresh();}
+    else if(a==='library-mode') {libraryMode=target.dataset.value==='editions'?'editions':'stories';await refresh();}
+    else if(a==='toggle-story-connections') {
+      connectionFiltersExpanded=!connectionFiltersExpanded;
+      $('#story-connection-options').hidden=!connectionFiltersExpanded;
+      target.setAttribute('aria-expanded',String(connectionFiltersExpanded));
+      target.setAttribute('aria-label',`${connectionFiltersExpanded?'Hide':'Show'} connections`);
+    }
     else if(a==='knowledge-mode') {knowledgeMode=target.dataset.value==='concepts'?'concepts':'graph';render();}
     else if(a==='settings-section') {captureSettingsDraft();settingsSection=target.dataset.value;render();}
     else if(a==='knowledge-home') {knowledgeTopic=null;knowledgeConcept=null;knowledgeQuery='';render();}
@@ -612,7 +659,7 @@ document.addEventListener('click',async event=>{
     else if(a==='confirm-import') {dialog.close();await startTask('import_legacy');}
     else if(a==='upload') $('#epub-file').click();
     else if(a==='read') await openReader(id);
-    else if(a==='edition') {captureSettingsDraft();currentEdition=await api('/editions/'+id);currentItem=null;view='reading';readingMode='editions';render();window.scrollTo(0,0);}
+    else if(a==='edition') {captureSettingsDraft();currentEdition=await api('/editions/'+id);currentItem=null;view='library';libraryMode='editions';render();window.scrollTo(0,0);}
     else if(a==='back-edition') {currentEdition=null;render();}
     else if(a==='reader-back') {if(currentEdition)currentEdition=await api('/editions/'+currentEdition.id);currentItem=null;readerCitation=null;view=lastView;await refresh();window.scrollTo(0,readerReturnScroll);(document.getElementById(readerReturnFocus)||document.getElementById('title-'+readerReturnItemId)||document.querySelector('[data-action="read"][data-id="'+CSS.escape(readerReturnItemId)+'"]'))?.focus({preventScroll:true});}
     else if(a==='reader-tab') {readerTab=target.dataset.value;renderReader();}
@@ -654,7 +701,12 @@ document.addEventListener('input',event=>{
   }
 });
 document.addEventListener('change',async event=>{
-  if(event.target.id==='story-connection') {setConnectionScope(event.target.value);render();return;}
+  if(event.target.id==='story-connection-all'||event.target.dataset.storyConnection) {
+    const input=event.target;
+    if(input.id==='story-connection-all') setConnectionScope(input.checked?'all':'none');
+    else toggleStoryConnection(input.dataset.storyConnection,input.checked);
+    render();document.getElementById(input.id)?.focus({preventScroll:true});return;
+  }
   if(event.target.id==='appearance-theme') {try {await setTheme(event.target.value);} catch(error) {toast(error.message,true);}return;}
   if(event.target.id==='f-provider') {
     const values=readForm($('#settings-form')),provider=event.target.value;
@@ -673,7 +725,7 @@ document.addEventListener('keydown',async event=>{
   }
   if(event.key==='Enter'&&event.target.matches('[role="button"][data-action]')) event.target.click();
   if(event.key==='Escape'&&currentItem&&!dialog.open) $('[data-action="reader-back"]')?.click();
-  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();if(view==='knowledge'&&!currentItem){$(knowledgeMode==='graph'?'#graph-search':'#knowledge-search')?.focus();return;}await navigation('reading');$('#search')?.focus();}
+  if(event.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!dialog.open) {event.preventDefault();if(view==='knowledge'&&!currentItem){$(knowledgeMode==='graph'?'#graph-search':'#knowledge-search')?.focus();return;}await navigation('library');$('#search')?.focus();}
 });
 dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)dialog.close();}});
 window.addEventListener('scroll',()=>{if(currentItem){const max=document.documentElement.scrollHeight-window.innerHeight;const bar=$('#reading-progress');if(bar)bar.style.width=(max>0?window.scrollY/max*100:100)+'%';}},{passive:true});

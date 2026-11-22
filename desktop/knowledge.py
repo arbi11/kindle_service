@@ -152,8 +152,13 @@ def graph(store, *, connection="all", start="", end=""):
     Source connections cover all saved reading. Semantic links come only from the
     explicitly mapped concepts; a source link never implies a semantic finding.
     """
-    if not isinstance(connection, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", connection):
-        raise ValueError("Choose a valid connection.")
+    if not isinstance(connection, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}(?:,[a-zA-Z0-9_-]{1,80}){0,49}", connection):
+        raise ValueError("Choose valid connections.")
+    selected_connections = set(connection.split(','))
+    if len(selected_connections) > 1 and selected_connections.intersection({'all', 'none'}):
+        raise ValueError("Choose valid connections.")
+    if connection == 'none':
+        selected_connections = set()
     for value in (start, end):
         if value:
             try:
@@ -174,7 +179,7 @@ def graph(store, *, connection="all", start="", end=""):
         item["connection_id"] = item["connection_id"] or "other"
     all_days = [i["published_day"] for i in readings if i["published_day"]]
     chosen = {i["id"]: i for i in readings
-              if (connection == "all" or i["connection_id"] == connection)
+              if (connection == "all" or i["connection_id"] in selected_connections)
               and (not start or i["published_day"] is not None and i["published_day"] >= start)
               and (not end or i["published_day"] is not None and i["published_day"] <= end)}
     warning = ""

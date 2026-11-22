@@ -28,7 +28,7 @@ const KnowledgeGraph = (() => {
 
   function page() {
     return `<section class="knowledge-graph-page">
-      <p class="knowledge-scope">${esc(connectionName(connectionScope))}</p>
+      <p class="knowledge-scope">${esc(connectionScopeLabel())}</p>
       <form id="graph-filters" class="graph-filters">
         <label>Published from<input id="graph-from" name="from" type="date" value="${esc(filters.from)}"></label>
         <label>Published through<input id="graph-to" name="to" type="date" value="${esc(filters.to)}"></label>
@@ -83,7 +83,7 @@ const KnowledgeGraph = (() => {
     ready=false;
     if(!data.nodes.length) {
       document.getElementById('graph-empty').hidden=false;
-      document.getElementById('graph-empty').textContent='No readings match this connection and date range. Try a wider range or reset the filters.';
+      document.getElementById('graph-empty').textContent=connectionScope==='none'?'Choose at least one connection in Filter stories.':'No readings match the selected connections and date range. Try a wider range or reset the dates.';
       document.getElementById('graph-selection').innerHTML='<p>No node selected.</p>';
       selected=null;return;
     }

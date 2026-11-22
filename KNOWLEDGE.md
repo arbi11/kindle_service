@@ -16,11 +16,12 @@ one focuses it and shows its details, linked nodes and any supporting passages.
 Readings open in the existing full reader. Returning preserves the selected node,
 graph positions, viewport and active filters.
 
-The left Filter stories selector supplies one shared connection scope for reading,
-Graph and Concepts. The graph retains inclusive Published from / Published through
+The left Filter stories checkbox list supplies one shared selection of connections
+for Today, Library, Graph and Concepts. All connections selects the whole library;
+clearing every checkbox shows no readings. Multiple checked connections are combined. The graph retains inclusive Published from / Published through
 filters. Saved publication times are interpreted in the reader's configured
 timezone. Apply filters rebuilds the graph from matching readings, retaining only
-concepts, insights, topics and citations supported by those readings. Reset dates clears the date range while retaining the selected connection.
+concepts, insights, topics and citations supported by those readings. Reset dates clears the date range while retaining the selected connections.
 Empty ranges show an explicit empty state; invalid dates produce a clear error.
 
 Connection edges mean "collected through this connection". They do not imply a
@@ -78,7 +79,8 @@ sources retain their insight but disable the passage link with an explanation.
 The reader also checks the text version immediately before opening a citation.
 
 The existing private-session authentication covers `/api/knowledge` and
-`/api/knowledge/graph?connection=all&from=YYYY-MM-DD&to=YYYY-MM-DD`. Reading the
+`/api/knowledge/graph?connection=all&from=YYYY-MM-DD&to=YYYY-MM-DD`. The connection
+parameter also accepts comma-separated IDs (a union), or `none` for an empty selection. Reading the
 pilot never updates reading state, delivery history, settings, or source content.
 Invalid pilot data leaves ordinary reading available. There is no pilot write API.
 
