@@ -29,6 +29,9 @@ jobs:
       SOURCE_COMMIT: ${{ inputs.source_commit }}
       RELEASE_VERSION: ${{ inputs.version }}
     steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - name: Check the build and draft release
         shell: bash
         run: |
