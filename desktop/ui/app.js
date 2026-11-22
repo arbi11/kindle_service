@@ -194,7 +194,7 @@ function render() {
       <aside class="sidebar">
         <div class="digest-brand"><img class="brand-mark" src="/icon.svg" width="36" height="36" alt=""><span class="brand-name">Quib27</span></div>
         <nav class="nav primary-nav" aria-label="Main navigation">
-          ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span></button>`).join('')}
+          ${pages.map(([id,i,title]) => `<button data-nav="${id}" aria-label="${title}" ${id==='library'&&state.stats.unread?'aria-describedby="library-unread-count"':''} class="${view===id?'active':''}" ${view===id?'aria-current="page"':''}>${icon(i)}<span>${title}</span>${id==='library'&&state.stats.unread?`<span class="badge" id="library-unread-count" title="${state.stats.unread} unread ${state.stats.unread===1?'story':'stories'}">${state.stats.unread}</span>`:''}</button>`).join('')}
         </nav>
         ${!currentEdition&&(view==='today'||view==='knowledge'||view==='library'&&libraryMode==='stories')?connectionFilter():''}
         <div class="sidebar-foot sidebar-utilities">
