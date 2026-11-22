@@ -187,6 +187,7 @@ def main():
         command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--name', 'Quib27',
             '--distpath', str(ROOT / 'dist'), '--workpath', str(ROOT / 'build/pyinstaller'), '--specpath', str(ROOT / 'build'),
             '--python-option', 'X utf8', '--noupx',
+            '--additional-hooks-dir', str(ROOT / 'packaging/hooks'),
             '--add-data', str(ROOT / 'desktop/ui') + ':desktop/ui',
             '--add-data', str(ROOT / 'connections') + ':connections',
             '--add-data', str(ROOT / 'agent/dist') + ':agent/dist',
@@ -197,6 +198,10 @@ def main():
             '--collect-submodules', 'keyring.backends', '--copy-metadata', 'keyring',
             '--collect-all', 'ddgs', '--collect-all', 'primp',
             '--exclude-module', 'wordfreq', '--exclude-module', 'faster_whisper', '--exclude-module', 'ebooklib', '--exclude-module', 'tkinter']
+        # Keep the WebEngine binding dependencies, without unrelated optional
+        # modules or the QML plugin catalogue (see packaging/hooks).
+        for module in ('QtQuick3D', 'QtCharts', 'QtDataVisualization', 'QtGraphs', 'QtVirtualKeyboard', 'QtWebEngineQuick'):
+            command += ['--exclude-module', 'PySide6.' + module]
         if system == 'Windows':
             # Keep stdio for bounded search workers, but hide the app's console.
             command += ['--hide-console', 'hide-early', '--icon', str(icon_folder / 'icon.ico')]
@@ -207,6 +212,11 @@ def main():
     target = ROOT / 'dist/Quib27'
     if system == 'Darwin':
         target = ROOT / 'dist/Quib27.app/Contents/Resources'
+    import re
+    binary_root = ROOT / ('dist/Quib27.app/Contents/Frameworks' if system == 'Darwin' else 'dist/Quib27/_internal')
+    unnecessary = re.compile(r'^(?:lib)?Qt6?(?:Charts|DataVisualization|Graphs|Quick3D|VirtualKeyboard)', re.I)
+    if any(unnecessary.match(path.name) for path in binary_root.rglob('*') if path.is_file()):
+        raise RuntimeError('The bundle contains unrelated optional Qt components; check the packaging hooks')
     (target / 'agent').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'agent/TOOLS.md', target / 'agent/TOOLS.md')
     for source, name in [('desktop/COPYRIGHT.txt', 'COPYRIGHT.txt'), ('INSTALL.md', 'READ-ME.txt')]:

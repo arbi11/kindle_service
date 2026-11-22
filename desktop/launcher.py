@@ -150,7 +150,19 @@ def main():
     parser.add_argument("--screenshot", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--publication-browser-job", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--publication-search", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check-desktop-components", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.check_desktop_components:
+        from PySide6.QtCore import qVersion
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QIcon
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from .agent import PiSelection
+        result = PiSelection().select({'articles':[], 'preferences':'', 'maximum':1},
+                                     provider='openai', model='gpt-6-luna', key='synthetic-offline-check')
+        print(json.dumps({'qt':qVersion(), 'pi':result['runtime'], 'model_requests':result['model_turns']}), flush=True)
+        return 0
     if args.publication_search:
         from .publication_search import run_worker
         return run_worker()

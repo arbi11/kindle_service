@@ -3,6 +3,7 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import { publicationProvider } from './provider.mjs';
 import { reviewArticle } from './quality.mjs';
 import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
 import { isIP } from 'node:net';
 
 export const PUBLICATION_AGENT_POLICY = Object.freeze({
@@ -149,7 +150,7 @@ export async function chooseArticles(input, overrides = {}) {
 }
 
 // One private stdin request, one bounded stdout result; no keys in command-line arguments.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   let input;
   try {
     let payload = '';

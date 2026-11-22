@@ -2,6 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall, fauxText, getCurrentSystemMessage } from '@earendil-works/pi-ai';
 import { chooseArticles, PUBLICATION_AGENT_POLICY } from './selection.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+test('CLI entry point works through the resource symlinks used in a macOS bundle', {skip:process.platform==='win32'}, () => {
+  const folder=mkdtempSync(join(tmpdir(),'quib27 resource '));
+  try {
+    const script=join(folder,'reader-agent.mjs');
+    symlinkSync(fileURLToPath(new URL('./selection.mjs',import.meta.url)),script);
+    const result=spawnSync(process.execPath,[script],{encoding:'utf8',timeout:10000,input:JSON.stringify({
+      provider:'openai',model:'test-fixture',api_key:'synthetic-offline-key',preferences:'',maximum:1,articles:[]})});
+    assert.equal(result.status,0,result.stderr);
+    assert.equal(JSON.parse(result.stdout).model_turns,0);
+  } finally {rmSync(folder,{recursive:true,force:true});}
+});
 
 const input = {
   provider: 'openai', model: 'test-fixture', api_key: 'synthetic-test-key', maximum: 1,
