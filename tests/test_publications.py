@@ -173,6 +173,9 @@ class PublicationEngineTests(unittest.TestCase):
         search = patch('desktop.publications.PublicSearch.search', return_value=[])
         search.start()
         self.addCleanup(search.stop)
+        quality = patch('desktop.engine.PiTextReview.review', return_value={'status': 'accepted'})
+        quality.start()
+        self.addCleanup(quality.stop)
 
     def tearDown(self):
         self.engine.close()

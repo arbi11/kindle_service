@@ -1,8 +1,7 @@
 // Pi owns the agent loop. Quib27 supplies only the bounded article-selection tools.
 import { Agent } from '@earendil-works/pi-agent-core';
-import { createModels, createProvider } from '@earendil-works/pi-ai';
-import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
-import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
+import { publicationProvider } from './provider.mjs';
+import { reviewArticle } from './quality.mjs';
 import { pathToFileURL } from 'node:url';
 import { isIP } from 'node:net';
 
@@ -47,18 +46,7 @@ export async function chooseArticles(input, overrides = {}) {
   if (!articles.length) {
     return { selected: [], runtime: 'pi-agent-core', tools_used: [], model_turns: 0, policy, usage };
   }
-  const baseUrl = input.provider === 'openai' ? 'https://api.openai.com/v1' : 'https://openrouter.ai/api/v1';
-  const model = {
-    id: input.model, name: input.model, api: input.provider === 'openai' ? 'openai-responses' : 'openai-completions', provider: input.provider, baseUrl,
-    reasoning: input.provider === 'openai', input: ['text'], contextWindow: 128000, maxTokens: 2500,
-    // Unknown/custom model prices are not used to present a cost estimate.
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  };
-  const models = createModels();
-  models.setProvider(createProvider({
-    id: input.provider, name: input.provider, baseUrl, models: [model], api: input.provider === 'openai' ? openAIResponsesApi() : openAICompletionsApi(),
-    auth: { apiKey: { name: 'Quib27 supplied key', resolve: async () => ({ auth: { apiKey: input.api_key } }) } },
-  }));
+  const { model, streamFn } = publicationProvider(input);
   let selected = null;
   let turns = 0;
   let requestedCalls = 0;
@@ -120,9 +108,7 @@ export async function chooseArticles(input, overrides = {}) {
       }
       if (policyViolation) return { block: true, reason: policyViolation, terminate: true };
     },
-    streamFn: overrides.streamFn || ((currentModel, context, options) => models.streamSimple(currentModel, context, {
-      ...options, apiKey: input.api_key, maxTokens: 2500,
-    })),
+    streamFn: overrides.streamFn || streamFn,
   });
   agent.finishTurn = async ({ toolResults }) => {
     turns++;
@@ -172,7 +158,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (payload.length > 256000) throw new Error('Publication request is too large');
     }
     input = JSON.parse(payload);
-    process.stdout.write(JSON.stringify(await chooseArticles(input)));
+    if (input.phase && input.phase !== 'text_review') throw new Error('Unknown publication agent phase');
+    process.stdout.write(JSON.stringify(await (input.phase === 'text_review' ? reviewArticle(input) : chooseArticles(input))));
   } catch (error) {
     const message = String(error?.message || 'Pi selection failed').replaceAll(input?.api_key || '\0', '[credential hidden]');
     process.stdout.write(JSON.stringify({ error: message.slice(0, 700) }));

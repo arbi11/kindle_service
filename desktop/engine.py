@@ -22,13 +22,13 @@ from epub_writer import write_epub
 import raindrop_kindle as rk
 import youtube_kindle as yt
 from .content import sanitize, plain_text, paragraphs_html, render_newsletter
-from .store import now, uid
+from .store import now, uid, private_write
 from .connections import Catalogue, Feed
 from .feeds import Subscription, resolve_subscription
 from .medium import freedium_address, creator_list, fetch_freedium, resolve_creator, saved_article
 from .publications import Publications, select_articles
 from .publication_browser import PublicationBrowser
-from .agent import PiSelection
+from .agent import PiSelection, PiTextReview
 
 log = logging.getLogger("daily-edition")
 
@@ -42,6 +42,7 @@ class Engine:
         self.task_lock = threading.Lock()
         self.schedule_lock = threading.Lock()
         self.closed = threading.Event()
+        self._publication_checks = []
         yt.TRANSCRIPTS_DIR = store.root / "transcripts"
         yt.CACHE_DIR = store.root / "cache"
 
@@ -222,6 +223,8 @@ class Engine:
     def collect_articles(self, session, source, since, remaining, job_id):
         s = self.store.settings()
         connection = self.catalogue.get(source["kind"])
+        if isinstance(connection, Publications):
+            connection.text_review = lambda candidate, article, **limits: self.review_publication_text(job_id, candidate, article, **limits)
         token = self.secrets.get("raindrop_token") if connection.definition["adapter"] == "raindrop" else ""
         if isinstance(connection, Publications) and source["detail"].get("preferences") and not self.secrets.get(s["provider"] + "_key"):
             raise ValueError("Add an AI API key in Settings to select articles using your written preferences, or leave preferences blank to fetch recent articles.")
@@ -324,7 +327,37 @@ class Engine:
                 errors.append(video["title"][:90] + ": " + self.secrets.redact(exc))
         return added, errors
 
+    def review_publication_text(self, job_id, candidate, article, *, timeout=105):
+        settings = self.store.settings()
+        key = self.secrets.get('openai_key') if settings['provider'] == 'openai' else ''
+        if not key:
+            return  # Other providers retain the existing deterministic checks.
+        self.store.progress(job_id, 'Checking article text and original-story match…', 40)
+        text_hash = hashlib.sha256(plain_text(article.get('body_html', '')).encode()).hexdigest()
+        record = {'original_url': candidate.url, 'content_url': article.get('content_url') or article.get('url'),
+                  'title': article.get('title', ''), 'text_sha256': text_hash, 'checked_at': now()}
+        error = None
+        try:
+            record['review'] = PiTextReview().review(candidate, article, model=settings['model'], key=key, timeout=timeout)
+        except ValueError as exc:
+            record['review'] = {'status': 'unavailable', 'error': self.secrets.redact(exc)}
+            error = ValueError('Article text checks could not finish: ' + record['review']['error'])
+        self._publication_checks.append(record)
+        folder = self.store.root / 'publication-checks'
+        folder.mkdir(exist_ok=True, mode=0o700)
+        fingerprint = hashlib.sha256((str(job_id) + candidate.url + str(record['content_url']) + text_hash).encode()).hexdigest()
+        private_write(folder / (fingerprint + '.json'), json.dumps(record, ensure_ascii=False))
+        if error:
+            raise error
+        result = record['review']
+        if result['status'] != 'accepted':
+            label = result['classification']['choice']
+            if label == 'article_text' and result.get('match'):
+                label = result['match']['choice']
+            raise ValueError('Article text checks rejected this copy: ' + label.replace('_', ' '))
+
     def job_prepare(self, job_id, payload):
+        self._publication_checks = []
         s = self.store.settings()
         # Finish a previously prepared but unsent scheduled edition before collecting more.
         if payload.get("automatic") and s["auto_send"]:
@@ -383,7 +416,8 @@ class Engine:
             message += f" {len(errors)} item(s) need attention; see Sources."
         if payload.get("automatic") and s["auto_send"] and edition_id:
             self.job_send(job_id, {"edition_id": edition_id, "automatic": True})
-        return {"message": message, "edition_id": edition_id, "added": added, "warnings": errors}
+        return {"message": message, "edition_id": edition_id, "added": added, "warnings": errors,
+                "text_checks": self._publication_checks}
 
     def export_epub(self, edition_id):
         edition = self.store.edition(edition_id)

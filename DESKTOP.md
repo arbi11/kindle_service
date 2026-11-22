@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.10 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.11 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -43,7 +43,7 @@ reviewed index. Custom executable adapters require reviewed app code and a relea
 See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
 to validate the catalogue. The core app's copyright terms are unchanged.
 
-## Publications prototype (v0.2.10)
+## Publications prototype (v0.2.11)
 
 The right Connections panel now includes Publications. Add a publication or section
 URL, describe what to read (and exclude), set an article limit, and choose whether
@@ -77,7 +77,7 @@ Pi lists candidates and selects matching IDs with reasons; no matches is a valid
 result. Blank preferences fetch recent articles without AI selection. OpenAI agent
 calls use Responses; existing summarization behavior stays under Settings.
 
-Pi has exactly two tools: `list_articles` exposes only the candidate metadata
+Pi's selection run has exactly two tools: `list_articles` exposes only the candidate metadata
 already collected by Quib27, and `select_articles` returns supplied IDs and reasons.
 The runtime enforces one call to each tool, in that order, with at most 40
 candidates, 10 selections, three model turns and 90 seconds per selection run. Invalid IDs,
@@ -86,6 +86,30 @@ The Python host also checks the completed tool sequence before accepting a resul
 Full article bodies, cookies, passwords and the API key are not included in the model's
 selection transcript. Shell, filesystem, browser, login, MCP and delivery tools
 are not registered with Pi.
+
+With OpenAI configured, each usable Publications copy also goes through a separate
+Pi text-review run. Its only tools are `classify_article_text(candidate_id)` and
+`verify_article_match(candidate_id)`. Each wraps a fixed question at OpenAI's native
+Decisions endpoint using `gpt-6-luna`; the configured model still drives Pi and writes
+summaries. Classification runs first. Only article text with probability at least
+0.80 proceeds to identity verification, which needs `same_article` probability at
+least 0.90. These initial thresholds supplement existing readability and identity
+checks and do not guarantee completeness.
+
+Pi cannot supply text, URLs, prompts, models or verdicts to these tools. Their
+evidence comes from the host: public metadata, publisher excerpt and up to 24,000
+characters of fetched plain text. The agent transcript contains only the copy ID
+and tool results. Each review permits at most two calls, one per turn, three model
+turns and 90 seconds; each Decisions request has a 15-second timeout. At most four
+copies per selected article are reviewed, within DDGS's remaining budget when used.
+Rejected copies allow retrieval to continue; an API failure cannot approve one.
+Checks run before saving and summarization. Other providers retain existing checks.
+
+Owner-only `publication-checks/` receipts in the profile record tool names,
+categories, probabilities, models, token usage and text hashes, without body text
+or credentials. Successful prepare jobs also include `text_checks` in their result.
+See [the exact tool contracts](agent/TOOLS.md). The existing library is preserved
+without a retroactive AI scan.
 
 The host retrieves article text from the feed/public page, the local saved browser
 session, or optional Freedium. Each publication has a separate local profile.

@@ -23,6 +23,7 @@ MAX_CANDIDATES = 40
 MAX_SEARCH_QUERIES = 3
 MAX_COPY_PAGES = 4
 COPY_SEARCH_SECONDS = 45
+MAX_TEXT_REVIEWS = 4
 
 
 def title_tokens(value):
@@ -313,12 +314,17 @@ class Publications(Subscription):
         if not written_article_url(candidate.url):
             raise ValueError("This is a video or audio entry, not a written article")
         errors = []
+        self._text_reviews_left = MAX_TEXT_REVIEWS
         for name, read in self.retrieval_steps(candidate):
             if progress:
                 progress("Trying " + name.lower() + " for " + candidate.title[:65] + "…")
             try:
                 article = read(candidate)
                 if article is not None:
+                    # DDGS checks each usable copy inside its loop, so a rejected
+                    # copy cannot prevent a later result from being examined.
+                    if name != 'Public web search':
+                        self._review_text(candidate, article)
                     if candidate.published and (candidate.detail or {}).get("date_known") is not False:
                         article = {**article, "published": candidate.published}
                     return article
@@ -329,6 +335,19 @@ class Publications(Subscription):
                 message = re.sub(r"\s*(?:Use|Try) Sign in / reconnect.*", "", message)
                 errors.append(name + ": " + message[:180])
         raise ValueError("No readable copy found. " + "; ".join(errors))
+
+    def _review_text(self, candidate, article, *, deadline=None):
+        review = getattr(self, 'text_review', None)
+        if not review:
+            return
+        remaining = getattr(self, '_text_reviews_left', MAX_TEXT_REVIEWS)
+        if remaining <= 0:
+            raise ValueError('The four-copy text-check limit was reached; try again later')
+        self._text_reviews_left = remaining - 1
+        timeout = min(105, deadline - time.monotonic()) if deadline is not None else 105
+        if timeout <= 0:
+            raise ValueError('The public-copy retrieval budget was reached')
+        review(candidate, article, timeout=timeout)
 
     def _read_feed(self, candidate):
         detail = candidate.detail or {}
@@ -409,7 +428,9 @@ class Publications(Subscription):
                     if not (links_to_original(article, candidate) or excerpt_matches(article, candidate)
                             or author_matches and date_matches or wire_copy):
                         continue
-                    return {**article, "url": candidate.url, "content_source": "public_copy", "content_url": address}
+                    result = {**article, "url": candidate.url, "content_source": "public_copy", "content_url": address}
+                    self._review_text(candidate, result, deadline=deadline)
+                    return result
                 except (requests.RequestException, ValueError, TypeError):
                     continue
         if not found and search_errors:

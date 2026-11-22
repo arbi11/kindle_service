@@ -89,6 +89,8 @@ def main():
     shutil.copy2(ROOT / "desktop/ui/icon.svg", target / "icon.svg")
     shutil.copy2(ROOT / "desktop/COPYRIGHT.txt", target / "COPYRIGHT.txt")
     shutil.copy2(ROOT / "DESKTOP.md", target / "READ-ME.txt")
+    (target / "agent").mkdir(exist_ok=True)
+    shutil.copy2(ROOT / "agent/TOOLS.md", target / "agent/TOOLS.md")
     installer = target / "install.sh"
     installer.write_text('#!/bin/sh\nset -eu\nEDITION_INSTALL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec python3 "$EDITION_INSTALL_DIR/install.py" --launch "$@"\n')
     installer.chmod(0o755)

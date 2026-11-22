@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "api_version": 1,
   "maintainer": "Quib27 · arbi11",
   "id": "publications",
@@ -12,6 +12,7 @@
     "Read article links and pages on the publication website or feed you choose.",
     "Reuse the local browser session you save for this publication; no passwords are given to an AI model.",
     "Send article titles, short descriptions and your preferences to your configured AI provider for selection.",
+    "When OpenAI is configured, send fetched article text and public source metadata to fixed OpenAI Decisions checks for text type and article identity.",
     "Optionally send unreadable article URLs to freedium-mirror.cfd. Availability varies by article.",
     "Optionally send article titles to DDGS search engines and fetch public copies. No credentials or full article text are sent to search engines.",
     "Keep browser sessions on this laptop. This prototype uses private local profiles, without an added encryption layer."
