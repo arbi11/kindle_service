@@ -1,0 +1,6 @@
+# Reviewed connection definitions are hashed as bytes; all platforms need LF.
+* text=auto eol=lf
+*.jpg binary
+*.png binary
+*.ico binary
+*.icns binary
