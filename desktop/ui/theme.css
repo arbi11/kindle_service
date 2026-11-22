@@ -1,0 +1,110 @@
+/* One saved appearance choice covers the workspace, dialogs and full reader. */
+:root { color-scheme: light; }
+.theme-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 7px; background: transparent; color: var(--muted); text-align: left; font-size: 12px; }
+.theme-toggle:hover { background: var(--pale); color: var(--ink); }
+.theme-toggle svg { width: 17px; height: 17px; }
+.theme-toggle small { margin-left: auto; font-size: 10px; }
+.theme-toggle[aria-pressed=true] { color: var(--green); }
+
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --paper: #1c211d;
+  --panel: #242b25;
+  --side: #171d18;
+  --ink: #e1e7dc;
+  --muted: #aab5a3;
+  --line: #3b463b;
+  --green: #b0c99f;
+  --pale: #2c372b;
+  --hover: #2b352b;
+  --warning: #e2b48d;
+  --warning-bg: #392c24;
+  scrollbar-color: #586750 var(--paper);
+}
+:root[data-theme=dark] ::selection { color: #f1f5eb; background: #506347; }
+:root[data-theme=dark] :is(button,a,input,select,textarea,[tabindex]):focus-visible { outline-color: #b5d39e; }
+:root[data-theme=dark] :is(.shell,dialog,#task,#toasts,.reader-shell) { color: var(--ink); }
+:root[data-theme=dark] .shell :is(h1,h2,h3,h4,strong),
+:root[data-theme=dark] :is(.digest-brand,.page-title,.digest-title,.digest-article-title,.knowledge-row,.knowledge-insight-text,.knowledge-section-title,.graph-status,.graph-selection h2) { color: var(--ink); }
+:root[data-theme=dark] .shell :is(p,small,label),
+:root[data-theme=dark] :is(.nav-label,.brand-caption,.eyebrow,.local-pill,.page-subtitle,.hero .date,.hero-action .hint,
+  .article-meta,.article-row .excerpt,.article-no,.reading-card .excerpt,.reading-card .card-footer,.section-heading .count,
+  .rail-card .label,.rail-card .routine-row,.small-label,.source-card .source-address,.source-card .source-bottom,
+  .section-note,.field .hint,.form-card .description,.form-actions .hint,.checkbox-row small,.key-state,
+  .settings-rail .privacy-list li,.settings-rail .footnote,.modal-body .description,.footer-note,.sidebar-foot .version,
+  .intro-line,.inline-empty,.reading-budget,.pill,.schedule-mini,.connection-toggle small,.connection-toggle > svg:last-child,
+  .connection-description,.connection-options .hint,.connected-source-info p,.connection-access li,.catalogue-card-meta,
+  .knowledge-breadcrumbs,.knowledge-intro p,.knowledge-row span span,.knowledge-row small,.knowledge-detail-heading p,
+  .knowledge-footnote,.knowledge-empty,.knowledge-shared,.knowledge-insight-label,.knowledge-source-note,
+  .graph-date-note,.graph-coverage,.graph-legend,.graph-zoom,.graph-search-results p,.graph-search-count,
+  .graph-search-results button small,.graph-help,.graph-empty,.graph-selection > p,.graph-neighbours,.graph-neighbours small,
+  .reader-toolbar .reader-label,.reader-content .article-meta,.reader-content .reading-info,.reader-end p,.reader-citation-note) { color: var(--muted); }
+:root[data-theme=dark] :is(.nav button,.digest-shell .nav button,.tabs button,.library-modes button,.source-tabs button,.connections-tabs button,.icon-btn) { color: var(--muted); }
+:root[data-theme=dark] :is(.nav button:hover,.tabs button:hover,.icon-btn:hover,.theme-toggle:hover,.article-row:hover,
+  .digest-article:hover,.reading-card:hover,.graph-search-results button:hover) { background: var(--hover); color: var(--ink); }
+:root[data-theme=dark] :is(.nav button.active,.digest-shell .nav button.active,.digest-shell .connection-nav button.active,
+  .tabs button.active,.library-modes button.active,.source-tabs button.active,.icon-btn.saved,.source-tabs button:hover) { background: #34432f; color: #d2e5c2; border-color: #647959; }
+:root[data-theme=dark] .nav button .badge { background: #46593e; color: #e3eddb; }
+:root[data-theme=dark] :is(.digest-heading .date,.digest-toolbar,.digest-context > span:first-child,
+  .digest-article .article-meta,.digest-article .connection-name,.digest-item-info,.digest-empty p) { color: var(--muted); }
+:root[data-theme=dark] .digest-sort select { color: var(--ink); background: var(--panel); border-color: #56634f; }
+:root[data-theme=dark] .digest-excerpt { color: #b5c0ad; }
+:root[data-theme=dark] .digest-article.is-read .digest-title { color: #b7c5ae; }
+:root[data-theme=dark] .icon-btn.saved svg { fill: #455c38; }
+:root[data-theme=dark] :is(.connection-rail) { background: #1e251f; }
+:root[data-theme=dark] :is(.catalogue-card,.connection-group,.source-card,.reading-card,.form-card,.edition-listing,
+  dialog,.toast,.task-card,.error-full,.graph-selection,.graph-search-results:not(:empty),.source-tabs button) { background: var(--panel); border-color: var(--line); }
+:root[data-theme=dark] :is(.rail-card,.setup-card,.setup-card .setup-icon,.connection-banner,.setting-info,.recipient,
+  .status-chip,.status-chip.gray,.empty .empty-icon,.edition-summary,.knowledge-draft-note,.sample-tag,.reader-toolbar .sample-tag) { background: var(--pale); color: var(--muted); border-color: var(--line); }
+:root[data-theme=dark] :is(.story-filters,.sidebar-foot .version,.rail-connection,.rail-connection:first-child,
+  .connection-options .connected-source,.privacy-icon,.empty,.knowledge-pilot-label,.knowledge-evidence blockquote,
+  .graph-surface,.graph-selection,.graph-neighbours,.source-tabs button,.reader-tabs) { border-color: var(--line); }
+:root[data-theme=dark] :is(.field input:not([type=checkbox]),.field select,.field textarea,.search-wrap input,
+  .graph-filters input,.graph-filters select,.graph-search > input) { background: var(--panel); color: var(--ink); border-color: #56634f; }
+:root[data-theme=dark] :is(input,textarea)::placeholder { color: #9aa790; }
+:root[data-theme=dark] .field :is(input,textarea,select):focus { border-color: var(--green); box-shadow: 0 0 0 3px #b0c99f22; }
+:root[data-theme=dark] :is(.field label,.checkbox-row,.graph-filters label) { color: #d2dbca; }
+:root[data-theme=dark] :is(.text-btn,.field .hint a,.connection-toggle,.connection-toggle:hover,.reader-source,
+  .knowledge-breadcrumbs button,.knowledge-evidence h4,.graph-search-results button,.reader-tabs button.active,
+  .connections-tabs button[aria-selected=true]) { color: var(--green); }
+:root[data-theme=dark] .btn { background: var(--green); color: #1d2918; border-color: var(--green); }
+:root[data-theme=dark] .btn:hover { background: #c0d8ae; color: #172212; border-color: #c0d8ae; }
+:root[data-theme=dark] .btn.secondary { background: transparent; color: var(--green); border-color: #64745b; }
+:root[data-theme=dark] .btn.secondary:hover { background: var(--pale); }
+:root[data-theme=dark] .btn.light { background: var(--pale); color: var(--green); border-color: var(--line); }
+:root[data-theme=dark] :is(.btn.danger,.modal-error,.status-chip.warn) { background: var(--warning-bg); color: var(--warning); border-color: #78513d; }
+:root[data-theme=dark] :is(.modal-error p,.toast.error,.history-error,.source-error,.connected-source-error,.graph-error) { color: var(--warning); }
+:root[data-theme=dark] .toast.error { border-color: #78513d; }
+:root[data-theme=dark] :is(.modal-success,.form-success) { background: var(--pale); color: #c1d8af; }
+:root[data-theme=dark] :is(.toast,.task-card,dialog) { box-shadow: 0 12px 45px #0005; }
+:root[data-theme=dark] dialog::backdrop { background: #080d0ab3; }
+:root[data-theme=dark] .modal-head .eyebrow { color: var(--muted); }
+:root[data-theme=dark] .task-track { background: var(--line); }
+:root[data-theme=dark] :is(.task-track span,.reader-progress) { background: var(--green); }
+:root[data-theme=dark] .toggle { background: #4a5345; }
+:root[data-theme=dark] .toggle.on { background: #a7c28f; }
+:root[data-theme=dark] .source-icon.video { background: #46332c; color: #e1b19a; }
+:root[data-theme=dark] .source-icon.article { background: #35432e; color: #b4cf9e; }
+:root[data-theme=dark] .article-row.is-read h3 { color: #aab7a2; }
+:root[data-theme=dark] .graph-search-results button { color: var(--ink); }
+:root[data-theme=dark] :is(.graph-surface,.graph-empty) { background: var(--paper); }
+:root[data-theme=dark] div.vis-tooltip { background: var(--panel); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 3px 12px #0005; }
+
+/* Explicit reader colors also cover code, links, tables and citation highlights. */
+:root[data-theme=dark] .reader-shell { background: var(--paper); color: var(--ink); --line: #3b463b; }
+:root[data-theme=dark] .reader-shell .reader-toolbar { background: var(--paper); }
+:root[data-theme=dark] .reader-shell :is(.reader-content h1,.reader-brand) { color: var(--ink); }
+:root[data-theme=dark] .reader-shell .prose { color: #cdd7c5; }
+:root[data-theme=dark] .reader-shell .prose :is(a,blockquote) { color: #b5cca4; }
+:root[data-theme=dark] .reader-shell :is(.prose pre,.prose a.ts,.prose .cited-passage,.takeaway) { background: var(--pale); color: #d0dfc3; }
+:root[data-theme=dark] .reader-shell .prose :is(code,kbd) { color: inherit; }
+:root[data-theme=dark] .reader-shell :is(.prose th,.prose td,.prose blockquote,.reader-tabs) { border-color: #56634f; }
+:root[data-theme=dark] .reader-shell .prose th { background: var(--pale); }
+:root[data-theme=dark] .reader-shell .reader-tabs button { color: var(--muted); }
+:root[data-theme=dark] .reader-shell .reader-tabs button.active { color: var(--green); border-color: var(--green); }
+
+@media(max-width:650px) {
+  .digest-shell .sidebar-foot { display: block; margin-top: auto; padding-top: 18px; }
+  .digest-shell .sidebar-foot .version,.theme-toggle span,.theme-toggle small { display: none; }
+  .theme-toggle { padding: 10px; justify-content: center; }
+}

@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.11 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.12 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -201,6 +201,11 @@ installers are separate future builds. Mobile apps and paid hosting are outside
 this release.
 
 ## First reading
+
+Use **Dark mode** at the bottom of the left panel or the sun/moon button in the
+reader to switch the whole app between light and dark. **Settings → Appearance**
+also offers a sepia reader. Appearance changes save immediately, survive restarts,
+and preserve your current reading position and unsaved form entries.
 
 1. Open Quib27. Clearly labelled sample articles let you try the reader.
 2. In **Settings**, optionally add your AI key and reading interests.

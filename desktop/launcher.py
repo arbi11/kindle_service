@@ -36,7 +36,7 @@ def existing_runtime(root):
 def native_window(url, service, background=False, screenshot=None):
     # This shell intentionally uses the same local UI as the testable browser view.
     from PySide6.QtCore import QTimer, QUrl, Qt
-    from PySide6.QtGui import QAction, QDesktopServices, QIcon
+    from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon
     from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon, QFileDialog, QMessageBox
     from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -76,6 +76,8 @@ def native_window(url, service, background=False, screenshot=None):
     window.setMinimumSize(900, 640)
     profile = QWebEngineProfile(window)  # Off-the-record profile; library lives in our database.
     page = Page(profile, window)
+    dark = bool(service and service.store.settings().get('reader_theme') == 'dark')
+    page.setBackgroundColor(QColor('#1c211d' if dark else '#faf9f5'))
     page.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
     page.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, False)
     page.newWindowRequested.connect(lambda request: QDesktopServices.openUrl(request.requestedUrl()) if request.requestedUrl().scheme() in ("http", "https") else None)

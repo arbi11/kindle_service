@@ -247,7 +247,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.headers_common("text/html; charset=utf-8", len(payload), {"Content-Disposition": 'attachment; filename="Daily-Edition.html"'})
                     self.wfile.write(payload)
             else:
-                assets = {"/": "index.html", "/app.css": "app.css", "/app.js": "app.js", "/icon.svg": "icon.svg",
+                assets = {"/": "index.html", "/app.css": "app.css", "/theme.css": "theme.css", "/app.js": "app.js", "/icon.svg": "icon.svg",
                           "/knowledge-graph.js": "knowledge-graph.js",
                           "/vendor/vis-network.min.js": "vendor/vis-network/vis-network.min.js"}
                 if path not in assets:
@@ -255,6 +255,12 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 file = ASSETS / assets[path]
                 payload = file.read_bytes()
+                if path == '/':
+                    theme = self.app.store.settings()['reader_theme']
+                    theme = theme if theme in ('light', 'dark', 'sepia') else 'light'
+                    payload = payload.replace(b'data-theme="light"', ('data-theme="' + theme + '"').encode())
+                    if theme == 'dark':
+                        payload = payload.replace(b'name="color-scheme" content="light"', b'name="color-scheme" content="dark"')
                 media = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
                 self.headers_common(media + ("; charset=utf-8" if media.startswith("text/") else ""), len(payload))
                 self.wfile.write(payload)

@@ -10,6 +10,21 @@ const KnowledgeGraph = (() => {
   const connectionColors={youtube:'#ad8d84',raindrop:'#8199ad',freedium:'#9a98a0',substack:'#b8a17e',websites:'#7c9d94',other:'#aab59e'};
   const sourceName = id => state.catalogue?.find(c=>c.id===id)?.name || (id==='other'?'Other reading':id);
   const key = () => [filters.connection,filters.from,filters.to,state.stats.total].join('|');
+  const dark = () => document.documentElement.dataset.theme==='dark';
+  const nodeTheme = n => ({
+    color:{background:n.type==='reading'?(connectionColors[n.connection_id]||colors.reading):colors[n.type],
+      border:n.type==='reading'?(connectionColors[n.connection_id]||colors.reading):colors[n.type],
+      highlight:{background:dark()?'#34432f':'#e4eadc',border:dark()?'#b5cca4':'#344f38'},
+      hover:{background:dark()?'#34432f':'#e4eadc',border:dark()?'#b5cca4':'#344f38'}},
+    font:{color:n.type==='topic'?'#fff':dark()?'#e1e7dc':'#40533a',strokeWidth:n.type==='topic'?0:3,strokeColor:dark()?'#1c211d':'#faf9f5'},
+  });
+  const edgeColor = e => ({color:e.relation==='collected'?(dark()?'#56634f':'#d8ded1'):(dark()?'#839776':'#9da993'),highlight:dark()?'#bdd8aa':'#557447',hover:dark()?'#bdd8aa':'#557447'});
+  function themeChanged() {
+    if(!network||!data) return;
+    nodeSet.update(data.nodes.map(n=>{const theme=nodeTheme(n);return {id:n.id,color:theme.color,font:{...nodeSet.get(n.id).font,...theme.font}};}));
+    edgeSet.update(data.edges.map(e=>({id:e.id,color:edgeColor(e)})));
+    network.redraw();
+  }
 
   function page() {
     const options=[['all','All connections'],...(state.catalogue||[]).map(c=>[c.id,c.name]),['other','Other reading']];
@@ -77,17 +92,17 @@ const KnowledgeGraph = (() => {
     const previous=views.get(cacheKey);
     const nodes=data.nodes.map(n=>{
       const tooltip=document.createElement('div');tooltip.textContent=types[n.type]+': '+n.label;
-      const color=n.type==='reading'?(connectionColors[n.connection_id]||colors.reading):colors[n.type];
+      const theme=nodeTheme(n);
       return {id:n.id,label:n.type==='reading'||n.type==='insight'?'':n.label.replace(/(.{18,30})\s/g,'$1\n'),
         title:tooltip,shape:n.type==='topic'?'box':'dot',size:n.type==='connection'?22:n.type==='concept'?15:n.type==='insight'?8:n.mapped?7:4,
-        color:{background:color,border:color,highlight:{background:'#e4eadc',border:'#344f38'},hover:{background:'#e4eadc',border:'#344f38'}},
-        font:{face:'Arial',size:n.type==='connection'?15:13,color:n.type==='topic'?'#fff':'#40533a',strokeWidth:n.type==='topic'?0:3,strokeColor:'#faf9f5'},
+        color:theme.color,
+        font:{face:'Arial',size:n.type==='connection'?15:13,...theme.font},
         borderWidth:1,margin:n.type==='topic'?9:0,...(previous?.positions[n.id]||{})};
     });
     nodeSet=new vis.DataSet(nodes);
     fontScale=null;
     edgeSet=new vis.DataSet(data.edges.map(e=>({...e,title:e.relation==='collected'?'Collected through this connection':e.relation==='cites'?'Cites this saved reading':e.relation==='includes'?'Topic includes concept':'Concept has this perspective',
-      width:e.relation==='collected'?.55:1.3,color:{color:e.relation==='collected'?'#d8ded1':'#9da993',highlight:'#557447',hover:'#557447'},smooth:{type:'continuous',roundness:.15}})));
+      width:e.relation==='collected'?.55:1.3,color:edgeColor(e),smooth:{type:'continuous',roundness:.15}})));
     network=new vis.Network(canvas,{nodes:nodeSet,edges:edgeSet},{
       autoResize:true,layout:{randomSeed:27,improvedLayout:false},
       interaction:{hover:true,tooltipDelay:180,keyboard:{enabled:true,bindToWindow:false},hideEdgesOnDrag:false},
@@ -122,7 +137,7 @@ const KnowledgeGraph = (() => {
       const scale=network.getScale();output.textContent=Math.round(scale*100)+'%';
       if(fontScale===null||Math.abs(scale-fontScale)>.015) {
         fontScale=scale;
-        nodeSet.update(data.nodes.filter(n=>!['reading','insight'].includes(n.type)).map(n=>({id:n.id,font:{size:Math.min(70,Math.max(13,(n.type==='connection'?13:12)/scale))}})));
+        nodeSet.update(data.nodes.filter(n=>!['reading','insight'].includes(n.type)).map(n=>({id:n.id,font:{...nodeSet.get(n.id).font,size:Math.min(70,Math.max(13,(n.type==='connection'?13:12)/scale))}})));
       }
     }
   }
@@ -209,5 +224,5 @@ const KnowledgeGraph = (() => {
     if(action==='fit') fitGraph();
     if(action==='zoom-in'||action==='zoom-out') {network.moveTo({scale:Math.min(5,Math.max(.04,network.getScale()*(action==='zoom-in'?1.3:1/1.3))),animation:false});zoomLabel();}
   });
-  return {page,mount,unmount,setConnection,readingQueue,citation:id=>data?.citations.find(c=>c.id===id)};
+  return {page,mount,unmount,themeChanged,setConnection,readingQueue,citation:id=>data?.citations.find(c=>c.id===id)};
 })();
