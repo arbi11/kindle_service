@@ -215,8 +215,10 @@ def main():
     import re
     binary_root = ROOT / ('dist/Quib27.app/Contents/Frameworks' if system == 'Darwin' else 'dist/Quib27/_internal')
     unnecessary = re.compile(r'^(?:lib)?Qt6?(?:Charts|DataVisualization|Graphs|Quick3D|VirtualKeyboard)', re.I)
-    if any(unnecessary.match(path.name) for path in binary_root.rglob('*') if path.is_file()):
-        raise RuntimeError('The bundle contains unrelated optional Qt components; check the packaging hooks')
+    unused = sorted({path.name for path in binary_root.rglob('*')
+                     if path.is_file() and unnecessary.match(path.name)})
+    if unused:
+        raise RuntimeError('The bundle contains unrelated optional Qt components: ' + ', '.join(unused))
     (target / 'agent').mkdir(exist_ok=True)
     shutil.copy2(ROOT / 'agent/TOOLS.md', target / 'agent/TOOLS.md')
     for source, name in [('desktop/COPYRIGHT.txt', 'COPYRIGHT.txt'), ('INSTALL.md', 'READ-ME.txt')]:
