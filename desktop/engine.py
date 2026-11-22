@@ -250,7 +250,11 @@ class Engine:
                 self.store.progress(job_id, "Reading " + (bookmark.title or bookmark.url)[:90] + "…", 30)
                 article = rk.Article(1, {"_id": external_id, "link": bookmark.url}, bookmark.title, bookmark.url)
                 if isinstance(connection, Subscription):
-                    for key, value in connection.read_article(bookmark).items():
+                    if isinstance(connection, Publications):
+                        reading = connection.read_article(bookmark, progress=lambda message: self.store.progress(job_id, message, 35))
+                    else:
+                        reading = connection.read_article(bookmark)
+                    for key, value in reading.items():
                         setattr(article, key, value)
                 else:
                     rk.fetch_article(transport, article, False, rk.ImageBudget(0))
@@ -371,6 +375,8 @@ class Engine:
             edition_id = self.store.make_edition(date.strftime("Your %A edition · %d %B"), picked)
             self.export_epub(edition_id)
         if not picked and errors:
+            if sources and all(source["kind"] == "publications" for source in sources):
+                raise ValueError("No edition could be prepared: no readable articles were imported. Open Sources for the retrieval details.")
             raise ValueError("No edition could be prepared. " + " | ".join(errors[:3]))
         message = f"Your edition is ready: {len(picked)} pieces, about {max(1, round(words / 220))} minutes." if picked else "You're up to date. No new reading was found."
         if errors:

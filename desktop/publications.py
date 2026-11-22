@@ -7,7 +7,8 @@ from difflib import SequenceMatcher
 import hashlib
 import json
 import re
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+import time
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -15,9 +16,67 @@ from connection_sdk import Candidate, MAX_FEED_BYTES, iso_date, parse_feed
 from .content import plain_text
 from .feeds import PublicFeedHTTP, Subscription, feed_info, feed_root, public_url, paid_preview
 from .medium import clean_body, fetch_freedium, feed_is_preview
+from .publication_search import PublicSearch
 from .store import now
 
 MAX_CANDIDATES = 40
+MAX_SEARCH_QUERIES = 3
+MAX_COPY_PAGES = 4
+COPY_SEARCH_SECONDS = 45
+
+
+def title_tokens(value):
+    value = re.sub(r"\s+[|—–-]\s+(?:The )?(?:New York Times|NYT|Washington Post|Bloomberg|Reuters|Economist|Financial Times|Medium|The Athletic|Quora|Barron.s).*$", "", value, flags=re.I)
+    return re.findall(r"\w+", value.casefold())
+
+
+def titles_match(left, right, *, strict=False):
+    left, right = title_tokens(left), title_tokens(right)
+    common = len(set(left) & set(right))
+    overlap = common / max(1, min(len(set(left)), len(set(right))))
+    return (common >= (5 if strict else 1) and overlap >= (.75 if strict else .45)
+            or SequenceMatcher(None, " ".join(left), " ".join(right)).ratio() >= (.8 if strict else .55))
+
+
+def url_headline(url):
+    slug = unquote(urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1])
+    words = [word for word in re.split(r"[-_]+", slug) if word and not re.fullmatch(r"[a-f0-9]{12,}|\d{6,}", word)]
+    return " ".join(words) if len(words) >= 5 else ""
+
+
+def excerpt_matches(article, candidate):
+    detail = candidate.detail or {}
+    excerpt = detail.get("description") or plain_text(detail.get("feed_html", ""))
+    words = title_tokens(excerpt)[:18]
+    return (len(words) >= 8 and len(set(words)) >= 6
+            and " ".join(words) in " ".join(title_tokens(plain_text(article.get("body_html", "")))[:600]))
+
+
+def links_to_original(article, candidate):
+    for value in article.get("original_urls", []):
+        try:
+            if canonical_url(value) == canonical_url(candidate.url):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def credits_original_publisher(article, candidate):
+    """Recognize explicit wire credit, not a passing mention of a publisher."""
+    domain = urlsplit(candidate.url).hostname.removeprefix("www.")
+    brand = domain.split('.')[0]
+    if brand in ("news", "feeds", "rss", "feed") or len(brand) < 3:
+        return False
+    author = " ".join(title_tokens(article.get("author", "")))
+    opening = plain_text(article.get("body_html", "")).strip()[:150]
+    return (author == brand or bool(re.match(r"\(?" + re.escape(brand) + r"\)?\s*(?:--|—|–)", opening, re.I)))
+
+
+def written_article_url(url):
+    path = urlsplit(url).path.lower()
+    return not (re.search(r"/(?:videos?|podcasts?|audio|tv|radio|watch)(?:/|$)", path)
+                or re.search(r"\.(?:mp4|mp3|m4a|m3u8|webm|ogg)$", path))
 
 
 def checked_article_text(article, candidate, *, provider="Publication"):
@@ -28,12 +87,10 @@ def checked_article_text(article, candidate, *, provider="Publication"):
         raise ValueError(provider + " returned an article without a usable title")
     if len(text.split()) < 200:
         raise ValueError(provider + " returned less than 200 words; the text needs review before import")
-    def tokens(value):
-        value = re.sub(r"\s+[|—–-]\s+(?:The )?(?:New York Times|NYT|Washington Post|Bloomberg|Reuters|Economist|Financial Times|Medium|The Athletic|Quora|Barron.s).*$", "", value, flags=re.I)
-        return re.findall(r"\w+", value.casefold())
-    expected, returned = tokens(candidate.title), tokens(title)
-    overlap = len(set(expected) & set(returned)) / max(1, min(len(set(expected)), len(set(returned))))
-    if overlap < .45 and SequenceMatcher(None, " ".join(expected), " ".join(returned)).ratio() < .55:
+    alias = url_headline(candidate.url)
+    alternate = (alias and titles_match(title, alias, strict=True)
+                 and (excerpt_matches(article, candidate) or links_to_original(article, candidate)))
+    if not titles_match(candidate.title, title) and not alternate:
         raise ValueError(provider + " returned a different headline; the text needs review before import")
     return article
 
@@ -51,6 +108,7 @@ def publication_values(values):
     preference = values.get("preferences", "")
     maximum = values.get("max_articles", 5)
     fallback = values.get("freedium_fallback", True)
+    search = values.get("search_fallback", True)
     if not isinstance(title, str) or len(title) > 150:
         raise ValueError("Use a publication name of up to 150 characters")
     if not isinstance(preference, str) or len(preference) > 3000:
@@ -59,8 +117,11 @@ def publication_values(values):
         raise ValueError("Choose 1–10 articles per fetch")
     if type(fallback) is not bool:
         raise ValueError("Choose whether to try Freedium")
+    if type(search) is not bool:
+        raise ValueError("Choose whether to search for public copies")
     return {"title": title.strip() or urlsplit(address).hostname.removeprefix("www."), "url": address,
-            "detail": {"preferences": preference.strip(), "max_articles": maximum, "freedium_fallback": fallback}}
+            "detail": {"preferences": preference.strip(), "max_articles": maximum,
+                       "freedium_fallback": fallback, "search_fallback": search}}
 
 
 def same_publication(url, selected):
@@ -94,8 +155,31 @@ def page_candidates(payload, address):
                 except ValueError:
                     pass
             entries = parse_feed(payload, sorted(domains), fallback_date=now(), include_content=True, base_url=address)
-        return [replace(item, external_id=candidate_url(item.url), url=canonical_url(item.url))
-                for item in entries if same_publication(item.url, address)][:MAX_CANDIDATES]
+        root = feed_root(payload)
+        nodes = root.findall('./channel/item') + root.findall('{*}entry')
+        descriptions, media, dates = {}, set(), {}
+        for node in nodes[:500]:
+            link = node.findtext('link') or next((link.get('href', '') for link in node.findall('{*}link')
+                                               if link.get('rel', 'alternate') == 'alternate'), '')
+            try:
+                key = canonical_url(urljoin(address, link))
+            except ValueError:
+                continue
+            descriptions[key] = plain_text(node.findtext('description') or node.findtext('{*}summary') or '')[:700]
+            dates[key] = bool(iso_date(node.findtext('pubDate') or node.findtext('{*}published')
+                                      or node.findtext('{*}updated') or node.findtext('{*}date') or '', ''))
+            if any((enclosure.get('type', '').startswith(('audio/', 'video/')))
+                   for enclosure in node.findall('enclosure')):
+                media.add(key)
+        result = []
+        for item in entries:
+            key = canonical_url(item.url)
+            if same_publication(key, address) and written_article_url(key) and key not in media:
+                detail = item.detail or {}
+                result.append(replace(item, external_id=candidate_url(key), url=key, detail={**detail,
+                    'description': descriptions.get(key) or plain_text(detail.get('feed_html', ''))[:700],
+                    'date_known': dates.get(key, False)}))
+        return result[:MAX_CANDIDATES]
     except ValueError:
         pass
     try:
@@ -121,6 +205,8 @@ def page_candidates(payload, address):
                 pending.extend(record[key][:100])
         if isinstance(record.get("item"), dict):
             pending.append(record["item"])
+        if record.get("@type") in ("VideoObject", "AudioObject", "PodcastEpisode"):
+            continue
         if record.get("headline") and isinstance(record.get("url"), str):
             candidates.append((record["url"], str(record["headline"]), str(record.get("description", "")),
                                iso_date(record.get("datePublished", ""), "")))
@@ -137,7 +223,7 @@ def page_candidates(payload, address):
         except ValueError:
             continue
         parsed = urlsplit(url)
-        if (not same_publication(url, address) or url in seen or url == canonical_url(address)
+        if (not same_publication(url, address) or not written_article_url(url) or url in seen or url == canonical_url(address)
                 or len(title.strip()) < 18 or len(title) > 1000 or len(title.split()) < 3
                 or len(parsed.path.strip("/")) < 12
                 or re.search(r"/(?:login|signin|sign-in|subscribe|account|privacy|terms|search|newsletters?|contact|about)(?:/|$)", parsed.path, re.I)):
@@ -153,7 +239,10 @@ def page_candidates(payload, address):
 def extract_article(payload, address, title="", author="", *, authenticated=False):
     import trafilatura
     from lxml import html
-    doc = html.fromstring(payload)
+    try:
+        doc = html.fromstring(payload)
+    except (ValueError, html.etree.ParserError):
+        raise ValueError("The page did not contain readable article HTML") from None
     if doc.xpath('//input[@type="password"]') and not doc.xpath('//article'):
         raise ValueError("This page asks you to sign in. Use Sign in / reconnect.")
     body = trafilatura.extract(payload, url=address, output_format="html", include_links=True,
@@ -174,7 +263,9 @@ def extract_article(payload, address, title="", author="", *, authenticated=Fals
     return {"body_html": clean_body(body, address), "title": title or address,
             "author": author, "url": address,
             "published": iso_date(metadata.date, "") if metadata and metadata.date else "",
-            "content_source": "subscriber" if authenticated else "publisher", "content_url": address}
+            "content_source": "subscriber" if authenticated else "publisher", "content_url": address,
+            "original_urls": [urljoin(address, value) for value in doc.xpath(
+                '//link[@rel="canonical"]/@href | //meta[@property="og:url"]/@content | //a/@href')][:300]}
 
 
 class Publications(Subscription):
@@ -203,45 +294,127 @@ class Publications(Subscription):
         if not entries:
             raise ValueError("No article links were found. Try a publication section, latest-stories page or RSS feed URL.")
         return [replace(item, detail={**(item.detail or {}), "publication_id": source["id"],
-                                     "freedium_fallback": source["detail"].get("freedium_fallback", True)})
+                                     "freedium_fallback": source["detail"].get("freedium_fallback", True),
+                                     "search_fallback": source["detail"].get("search_fallback", True)})
                 for item in entries if (item.detail or {}).get("date_known") is False
                 or not source.get("checked_at") or datetime.fromisoformat(item.published) >= since]
 
-    def read_article(self, candidate):
-        detail = candidate.detail or {}
+    def retrieval_steps(self, candidate):
+        """Ordered providers; further reviewed retrievers can join this cascade."""
+        steps = [("Feed", self._read_feed), ("Publisher", self._read_publisher),
+                 ("Publication browser", self._read_browser)]
+        if (candidate.detail or {}).get("freedium_fallback", True):
+            steps.append(("Freedium", self._read_freedium))
+        if (candidate.detail or {}).get("search_fallback", True):
+            steps.append(("Public web search", self._read_public_copy))
+        return steps
+
+    def read_article(self, candidate, *, progress=None):
+        if not written_article_url(candidate.url):
+            raise ValueError("This is a video or audio entry, not a written article")
         errors = []
+        for name, read in self.retrieval_steps(candidate):
+            if progress:
+                progress("Trying " + name.lower() + " for " + candidate.title[:65] + "…")
+            try:
+                article = read(candidate)
+                if article is not None:
+                    if candidate.published and (candidate.detail or {}).get("date_known") is not False:
+                        article = {**article, "published": candidate.published}
+                    return article
+            except (requests.RequestException, ValueError) as exc:
+                # Keep one short reason per provider, instead of repeating login
+                # instructions inside every article and again inside the toast.
+                message = " ".join(str(exc).split())
+                message = re.sub(r"\s*(?:Use|Try) Sign in / reconnect.*", "", message)
+                errors.append(name + ": " + message[:180])
+        raise ValueError("No readable copy found. " + "; ".join(errors))
+
+    def _read_feed(self, candidate):
+        detail = candidate.detail or {}
         # A full feed body can already contain all the subscriber's reading.
         body = detail.get("feed_html", "")
         if body and len(plain_text(body).split()) >= 200 and not feed_is_preview(body):
             return {"body_html": clean_body(body, candidate.url), "title": candidate.title,
                     "author": candidate.author, "url": candidate.url,
                     "content_source": "publisher", "content_url": candidate.url}
-        try:
-            page = PublicFeedHTTP().get(candidate.url)
-            from .feeds import page_is_paid
-            if page_is_paid(page.content):
-                raise ValueError("Subscriber access is needed")
-            return checked_article_text(extract_article(page.content, candidate.url, candidate.title, candidate.author),
-                                        candidate, provider="Publisher")
-        except (requests.RequestException, ValueError) as exc:
-            errors.append(str(exc))
-        try:
-            page = self.browser.request(detail["publication_id"], candidate.url)
-            return checked_article_text(extract_article(page["html"].encode(), candidate.url, candidate.title,
-                                                       candidate.author, authenticated=True), candidate, provider="Publication browser")
-        except ValueError as exc:
-            errors.append(str(exc))
-        if detail.get("freedium_fallback", True):
+
+    def _read_publisher(self, candidate):
+        from .feeds import page_is_paid
+        page = PublicFeedHTTP().get(candidate.url)
+        if page_is_paid(page.content):
+            raise ValueError("Subscriber access is needed")
+        return checked_article_text(extract_article(page.content, page.url or candidate.url, candidate.title,
+                                                   candidate.author), candidate, provider="Publisher")
+
+    def _read_browser(self, candidate):
+        source_id = (candidate.detail or {}).get("publication_id")
+        if not source_id:
+            raise ValueError("No saved publication browser profile")
+        page = self.browser.request(source_id, candidate.url)
+        return checked_article_text(extract_article(page["html"].encode(), candidate.url, candidate.title,
+                                                   candidate.author, authenticated=True), candidate, provider="Publication browser")
+
+    def _read_freedium(self, candidate):
+        return checked_article_text(fetch_freedium(candidate.url), candidate, provider="Freedium")
+
+    def _read_public_copy(self, candidate):
+        from .feeds import page_is_paid
+        title = candidate.title.replace('"', ' ').strip()
+        domain = urlsplit(candidate.url).hostname.removeprefix("www.")
+        queries = [f'"{title}" -site:{domain}']
+        alias = url_headline(candidate.url)
+        if alias and not titles_match(title, alias, strict=True):
+            queries.append(f'"{alias}" -site:{domain}')
+        queries.append(f'{title} {candidate.author[:100]} -site:{domain}')
+        queries = list(dict.fromkeys(queries))[:MAX_SEARCH_QUERIES]
+        deadline = time.monotonic() + COPY_SEARCH_SECONDS
+        visited = {canonical_url(candidate.url)}
+        fetched, found, search_errors = 0, 0, []
+        for query in queries:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or fetched >= MAX_COPY_PAGES:
+                break
             try:
-                article = checked_article_text(fetch_freedium(candidate.url), candidate, provider="Freedium")
-                # Some mirror headers show retrieval time. Prefer the date from
-                # the publication's own feed or dated index when it is known.
-                if candidate.published and detail.get("date_known") is not False:
-                    article = {**article, "published": candidate.published}
-                return article
+                records = PublicSearch().search(query, timeout=remaining)
             except ValueError as exc:
-                errors.append(str(exc))
-        raise ValueError("Could not read the complete article. Use Sign in / reconnect or try another article. " + "; ".join(errors[-2:]))
+                search_errors.append(str(exc))
+                continue
+            for record in records:
+                found += 1
+                if fetched >= MAX_COPY_PAGES or time.monotonic() >= deadline:
+                    break
+                try:
+                    address = canonical_url(record["url"])
+                    if address in visited or not written_article_url(address):
+                        continue
+                    visited.add(address)
+                    if not (titles_match(record["title"], candidate.title)
+                            or alias and titles_match(record["title"], alias, strict=True)):
+                        continue
+                    fetched += 1
+                    page = PublicFeedHTTP().get(address, timeout=7, deadline=deadline)
+                    address = canonical_url(page.url or address)
+                    if address == canonical_url(candidate.url) or page_is_paid(page.content):
+                        continue
+                    article = checked_article_text(extract_article(page.content, address), candidate,
+                                                   provider="Public copy")
+                    author_matches = bool(candidate.author and article.get("author")
+                                          and titles_match(candidate.author, article["author"], strict=True))
+                    date_matches = bool((candidate.detail or {}).get('date_known') is not False
+                        and article.get("published") and candidate.published and
+                        abs((datetime.fromisoformat(article["published"]) - datetime.fromisoformat(candidate.published)).total_seconds()) <= 172800)
+                    wire_copy = (date_matches and credits_original_publisher(article, candidate)
+                                 and titles_match(candidate.title, article['title'], strict=True))
+                    if not (links_to_original(article, candidate) or excerpt_matches(article, candidate)
+                            or author_matches and date_matches or wire_copy):
+                        continue
+                    return {**article, "url": candidate.url, "content_source": "public_copy", "content_url": address}
+                except (requests.RequestException, ValueError, TypeError):
+                    continue
+        if not found and search_errors:
+            raise ValueError(search_errors[-1])
+        raise ValueError(f"Searched public copies; none of {found} results could be verified as readable text for this article")
 
 
 def select_articles(candidates, preferences, maximum, decide):

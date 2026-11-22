@@ -170,6 +170,9 @@ class PublicationEngineTests(unittest.TestCase):
         self.source_id = self.store.add_source('publications', 'The journal', SITE, {
             'preferences': 'Long-term investing; skip stock tips', 'max_articles': 1, 'freedium_fallback': True})
         self.connection = self.engine.catalogue.get('publications')
+        search = patch('desktop.publications.PublicSearch.search', return_value=[])
+        search.start()
+        self.addCleanup(search.stop)
 
     def tearDown(self):
         self.engine.close()
@@ -214,7 +217,7 @@ class PublicationEngineTests(unittest.TestCase):
             mirror.assert_called_once_with(STORY)
             mirror.reset_mock()
             item = replace(item, detail={**item.detail, 'freedium_fallback': False})
-            with self.assertRaisesRegex(ValueError, 'complete article'): self.connection.read_article(item)
+            with self.assertRaisesRegex(ValueError, 'No readable copy'): self.connection.read_article(item)
             mirror.assert_not_called()
 
     def test_agent_policy_failure_stops_before_retrieval_and_storage(self):
@@ -223,9 +226,10 @@ class PublicationEngineTests(unittest.TestCase):
         with patch.object(self.connection, 'discover', return_value=candidates), \
              patch('desktop.engine.PiSelection.select', side_effect=ValueError('Pi requested a tool outside the publication allowlist')), \
              patch.object(self.connection, 'read_article') as read:
-            with self.assertRaisesRegex(ValueError, 'publication allowlist'):
+            with self.assertRaisesRegex(ValueError, 'Open Sources'):
                 self.engine.job_prepare(self.store.create_job('prepare'), {'source_id': self.source_id})
             read.assert_not_called()
+        self.assertIn('publication allowlist', self.store.sources()[0]['error'])
         self.assertEqual(len(self.store.items()), 0)
         self.assertEqual(len(self.store.editions()), 0)
         self.assertEqual(self.store.query('SELECT COUNT(*) n FROM deliveries', one=True)['n'], 0)
@@ -311,6 +315,31 @@ class PublicationEngineTests(unittest.TestCase):
         self.assertIn('Fetch articles', result['message'])
         with self.assertRaisesRegex(ValueError, 'saved publication'):
             self.engine.job_login_publication(self.store.create_job('login_publication'), {'source_id': 'other'})
+
+    def test_public_copy_is_saved_with_provenance_and_deduplicated_by_original(self):
+        from test_publication_search import COPY, copy_page
+        self.secrets.set('openai_key', 'synthetic-test-key')
+        candidate = replace(page_candidates(index_page(), SITE)[0], detail={'publication_id': self.source_id})
+        self.connection.browser = Mock()
+        self.connection.browser.request.side_effect = ValueError('No subscriber session')
+        def pages(address, **kwargs):
+            return response(address, copy_page() if address == COPY else story_page(paid=True))
+        with patch.object(self.connection, 'discover', return_value=[candidate]), \
+             patch('desktop.engine.PiSelection.select', return_value=selection([{'id': '0', 'reason': 'Patient investing'}])) as choose, \
+             patch('desktop.publications.PublicFeedHTTP.get', side_effect=pages), \
+             patch('desktop.publications.fetch_freedium', side_effect=ValueError('Mirror unavailable')), \
+             patch('desktop.publications.PublicSearch.search', return_value=[{'title': candidate.title, 'url': COPY}]) as search:
+            result = self.engine.job_prepare(self.store.create_job('prepare'), {'source_id': self.source_id})
+            self.assertEqual(result['added'], 1)
+            item = self.store.items()[0]
+            self.assertEqual(item['url'], STORY)
+            self.assertEqual(item['content_url'], COPY)
+            self.assertEqual(item['content_source'], 'public_copy')
+            again = self.engine.job_prepare(self.store.create_job('prepare'), {'source_id': self.source_id})
+            self.assertEqual(again['added'], 0)
+        search.assert_called_once()
+        choose.assert_called_once()
+        self.assertEqual(self.store.query('SELECT COUNT(*) n FROM deliveries', one=True)['n'], 0)
 
     def test_browser_request_files_are_cleaned_up_on_failure(self):
         browser = PublicationBrowser(self.store.root)

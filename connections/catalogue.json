@@ -34,7 +34,7 @@
     {
       "id": "publications",
       "manifest": "publications/connection.json",
-      "sha256": "3473377e71af3558f851f4b6a4675e0dab49ac978b989b268b5ec097a4c86de7"
+      "sha256": "e383ce526a9ee6166e9160a432b929fc0c11d538901a3881da3dddd7eb61ac88"
     }
   ]
 }

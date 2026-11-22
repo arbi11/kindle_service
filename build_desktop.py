@@ -78,6 +78,7 @@ def main():
         "--add-data", str(ROOT / "agent/runtime") + ":agent/runtime",
         "--collect-data", "trafilatura", "--collect-data", "justext", "--collect-data", "dateparser",
         "--collect-submodules", "keyring.backends", "--copy-metadata", "keyring",
+        "--collect-all", "ddgs", "--collect-all", "primp",
         "--exclude-module", "wordfreq", "--exclude-module", "faster_whisper",
         "--exclude-module", "ebooklib", "--exclude-module", "tkinter",
         str(ROOT / "daily_edition.py")]

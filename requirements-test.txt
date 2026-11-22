@@ -3,3 +3,5 @@ requests
 wordfreq
 lxml
 trafilatura
+ddgs==9.16.1
+primp==2.0.1

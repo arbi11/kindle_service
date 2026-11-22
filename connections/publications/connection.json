@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api_version": 1,
   "maintainer": "Quib27 · arbi11",
   "id": "publications",
   "name": "Publications",
   "adapter": "publications",
-  "description": "Follow a publication or section with your own reading preferences. Sign in locally for subscriber access and optionally try Freedium when an article cannot be read.",
+  "description": "Follow a publication or section with your reading preferences. Try the publisher, your local browser session, Freedium and public-copy search when article text is unavailable.",
   "homepage": "https://github.com/arbi11/kindle_service",
   "icon": "book",
   "permissions": [
@@ -13,6 +13,7 @@
     "Reuse the local browser session you save for this publication; no passwords are given to an AI model.",
     "Send article titles, short descriptions and your preferences to your configured AI provider for selection.",
     "Optionally send unreadable article URLs to freedium-mirror.cfd. Availability varies by article.",
+    "Optionally send article titles to DDGS search engines and fetch public copies. No credentials or full article text are sent to search engines.",
     "Keep browser sessions on this laptop. This prototype uses private local profiles, without an added encryption layer."
   ],
   "setup": "publications"

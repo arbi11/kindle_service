@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import socket
+import time
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
@@ -69,16 +70,21 @@ class PublicHTTPSAdapter(HTTPAdapter):
 
 
 class PublicFeedHTTP:
-    def get(self, url, timeout=25, *, limit=MAX_DOCUMENT_BYTES, allowed_hosts=None):
+    def get(self, url, timeout=25, *, limit=MAX_DOCUMENT_BYTES, allowed_hosts=None, deadline=None):
         with requests.Session() as session:
             session.trust_env = False
             session.headers["User-Agent"] = "Quib27/0.2 (personal feed reader)"
             session.mount("https://", PublicHTTPSAdapter())
             for _ in range(6):
+                budget = min(timeout, 30)
+                if deadline is not None:
+                    budget = min(budget, deadline - time.monotonic())
+                    if budget <= 0:
+                        raise ValueError("The website took too long to respond")
                 url = public_url(url)
                 if allowed_hosts is not None and urlsplit(url).hostname not in allowed_hosts:
                     raise ValueError("This service redirected outside its allowed domains")
-                response = session.get(url, timeout=(10, min(timeout, 30)), allow_redirects=False, stream=True)
+                response = session.get(url, timeout=(min(10, budget), budget), allow_redirects=False, stream=True)
                 try:
                     if response.status_code in (301, 302, 303, 307, 308):
                         url = urljoin(url, response.headers.get("Location", ""))
@@ -86,6 +92,8 @@ class PublicFeedHTTP:
                     response.raise_for_status()
                     chunks, size = [], 0
                     for chunk in response.iter_content(65536):
+                        if deadline is not None and time.monotonic() > deadline:
+                            raise ValueError("The website took too long to respond")
                         size += len(chunk)
                         if size > limit:
                             raise ValueError("This website returned a document that is too large")

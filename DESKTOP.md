@@ -1,6 +1,6 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.2.7 build runs on
+Quib27 is a free proprietary desktop reader. This 0.2.10 build runs on
 64-bit Linux and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
@@ -43,13 +43,34 @@ reviewed index. Custom executable adapters require reviewed app code and a relea
 See [the contributor guide](connections/README.md) and run `python -m connection_sdk`
 to validate the catalogue. The core app's copyright terms are unchanged.
 
-## Publications prototype (v0.2.9)
+## Publications prototype (v0.2.10)
 
 The right Connections panel now includes Publications. Add a publication or section
 URL, describe what to read (and exclude), set an article limit, and choose whether
 to try Freedium. Use **Sign in / reconnect** for subscriber access: complete login
 in the local publication browser, then click **Finish sign-in**. **Fetch articles**
 collects matching reading into the library. **Preferences** edits a saved source.
+
+Retrieval is an ordered cascade: full feed content, publisher page, local
+publication browser, optional Freedium, then optional **Search for public copies
+if needed** using DDGS. Providers stop after a usable result; additional reviewed
+retrievers can join this cascade later. The task status names the current stage.
+Video and audio entries are excluded before AI selection.
+
+DDGS 9.16.1 runs in a separate, bounded worker without reader credentials in its
+input or environment. It searches through Yahoo, Mojeek and Startpage. The host
+permits at most three queries and four candidate-page fetches within a 45-second
+search/retrieval budget, with each search worker capped at 12 seconds. Only the
+article's public title, URL-derived headline and optional byline enter search;
+preferences, article bodies, local sessions and API keys do not. The search option
+can be disabled independently of Freedium in a publication's Preferences.
+
+Search snippets are never saved as articles. Public copies need readable body
+text and matching identity evidence: a link to the original, a matching publisher
+excerpt, or matching byline/date. An explicit wire credit with a close headline
+and date can identify syndication. Related reporting is not silently substituted.
+The reader labels a **Public copy**, links to the actual copy and retains the
+original source link; duplicate detection still uses the original article URL.
 
 Written preferences use the bundled Pi agent runtime and your configured AI key.
 Pi lists candidates and selects matching IDs with reasons; no matches is a valid
@@ -70,7 +91,9 @@ The host retrieves article text from the feed/public page, the local saved brows
 session, or optional Freedium. Each publication has a separate local profile.
 Short RSS content is fetched from the original page instead of being treated as
 a complete article. Publications accepts extracted text only when it has a matching
-headline and at least 200 words, as in the seven-day readability audit. Short or
+headline and at least 200 words, as in the seven-day readability audit. A changed
+headline can match the original article's URL slug when publisher excerpt or
+source-link evidence corroborates it. Short or
 mismatched results are reported for review. A known feed/index publication date
 takes precedence over Freedium's displayed date.
 Profiles currently have owner-only access without an added encryption layer.
@@ -87,7 +110,10 @@ Public feed examples for preference-based selection include Bloomberg Markets
 Business (`https://feeds.washingtonpost.com/rss/business`). Add one in Publications
 and enter your topics and exclusions. Feed discovery and full-text availability
 are separate steps; an unavailable story is reported rather than delegated to an
-unrestricted browsing agent.
+unrestricted browsing agent. These are readability and identity checks, not a
+guarantee of complete original-text coverage or future availability. A live DDGS
+search hit is not counted as a successful import until article text passes the
+checks and reaches the library.
 
 For a development checkout, run `python build_agent.py` once before testing written
 preferences. This builds pinned Pi packages and a private Node runtime; desktop

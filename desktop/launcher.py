@@ -147,7 +147,11 @@ def main():
     parser.add_argument("--no-scheduler", action="store_true", help="disable scheduled tasks for this session")
     parser.add_argument("--screenshot", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--publication-browser-job", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--publication-search", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.publication_search:
+        from .publication_search import run_worker
+        return run_worker()
     root = args.data_dir.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     root.chmod(0o700)
