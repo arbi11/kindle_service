@@ -60,10 +60,13 @@ Developer ID signing/notarization and Windows publisher signing require the
 owner's signing credentials and a separate signing setup.
 
 Build workflows upload artifacts for review, not an automatic public release.
-After all four native builds and the offline test workflow pass, download their
-artifacts, verify the SHA-256 files, and attach the installers to the matching
-GitHub preview release. Link the exact source commit and keep the experimental
-platform/signing status in the release notes. Do not move an existing version tag.
+After all four native builds and the offline test workflow pass, prepare a draft
+GitHub release targeting their exact source commit. The manually dispatched
+**Publish desktop preview** workflow takes that build run ID, full commit and
+version tag. It downloads the four artifacts on a GitHub runner, checks every
+package's SHA-256 and build record, attaches the 13 expected files, and publishes
+the draft as a prerelease. It refuses to overwrite a published release. Keep the
+experimental platform/signing status in the notes. Do not move an existing tag.
 
 References: [GitHub runner platforms](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 [PyInstaller usage](https://pyinstaller.org/en/stable/usage.html),

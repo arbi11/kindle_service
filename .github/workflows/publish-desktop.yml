@@ -1,0 +1,97 @@
+name: Publish desktop preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Desktop installers run
+        required: true
+      source_commit:
+        description: Full source commit built by that run
+        required: true
+      version:
+        description: Existing draft release tag
+        required: true
+        default: v0.4.0
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check the build and draft release
+        shell: bash
+        run: |
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" > build-run.json
+          gh release view "$RELEASE_VERSION" --json isDraft,targetCommitish,tagName > draft.json
+          python3 - <<'PY'
+          import json, os, re
+          run = json.load(open('build-run.json'))
+          draft = json.load(open('draft.json'))
+          sha = os.environ['SOURCE_COMMIT']
+          version = os.environ['RELEASE_VERSION']
+          assert re.fullmatch(r'[a-f0-9]{40}', sha), 'Use a full source commit'
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', version), 'Use a release version tag'
+          assert run['path'] == '.github/workflows/desktop-builds.yml'
+          assert run['conclusion'] == 'success' and run['head_branch'] == 'main'
+          assert run['head_sha'] == sha
+          assert draft['isDraft'], 'Never overwrite a published release'
+          assert draft['targetCommitish'] == sha and draft['tagName'] == version
+          PY
+      - name: Download native artifacts
+        run: gh run download "$BUILD_RUN_ID" --dir release-artifacts
+      - name: Verify checksums and exact source version
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          root = pathlib.Path('release-artifacts')
+          output = pathlib.Path('release-assets')
+          output.mkdir()
+          version = os.environ['RELEASE_VERSION'].removeprefix('v')
+          expected = {
+              'linux-x64': ('Linux', 'x64', ['linux-x64.tar.gz', 'linux-x64.deb']),
+              'windows-x64': ('Windows', 'x64', ['windows-x64-setup.exe']),
+              'macos-arm64': ('Darwin', 'arm64', ['macos-arm64.dmg']),
+              'macos-x64': ('Darwin', 'x64', ['macos-x64.dmg']),
+          }
+          assert {p.name for p in root.iterdir()} == {'quib27-' + p for p in expected}
+          for target, (system, arch, suffixes) in expected.items():
+              folder = root / ('quib27-' + target)
+              manifest = folder / f'build-info-{system.lower()}-{arch}.json'
+              checksums = folder / f'SHA256SUMS-{system.lower()}-{arch}.txt'
+              record = json.loads(manifest.read_text())
+              names = {f'quib27-{version}-{suffix}' for suffix in suffixes}
+              assert record['source_commit'] == os.environ['SOURCE_COMMIT']
+              assert record['version'] == version and record['system'] == system and record['architecture'] == arch
+              assert set(record['packages']) == names
+              listed = {}
+              for line in checksums.read_text().splitlines():
+                  digest, name = line.split('  ', 1)
+                  assert name in names and name not in listed
+                  listed[name] = digest
+              assert set(listed) == names
+              for name, digest in listed.items():
+                  package = folder / name
+                  assert package.stat().st_size > 1_000_000
+                  with package.open('rb') as stream:
+                      assert hashlib.file_digest(stream, 'sha256').hexdigest() == digest, name
+                  shutil.copy2(package, output / name)
+              for path in (manifest, checksums):
+                  shutil.copy2(path, output / path.name)
+              print('Verified:', target)
+          assert len(list(output.iterdir())) == 13
+          PY
+      - name: Attach verified files and publish the preview
+        run: |
+          gh release upload "$RELEASE_VERSION" release-assets/*
+          gh release edit "$RELEASE_VERSION" --draft=false --prerelease --latest=false
