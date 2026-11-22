@@ -1,7 +1,7 @@
 # Quib27 desktop
 
-Quib27 is a free proprietary desktop reader. This 0.3.1 build runs on
-64-bit Linux and keeps its library on your computer. It has no company account,
+Quib27 is a free proprietary desktop reader. This 0.4.0 preview has native
+Linux, Windows and macOS packaging and keeps its library on your computer. It has no company account,
 analytics, cloud library, or hosted service.
 
 ## Community connections: agreed direction
@@ -210,9 +210,11 @@ This installs the app into `~/.local/opt/quib27`, adds it to the application
 menu, and launches it. Alternatively, run the `Quib27` executable directly.
 The packaged application includes Python and the desktop dependencies.
 
-The app is currently built and tested on this Linux laptop. Windows and macOS
-installers are separate future builds. Mobile apps and paid hosting are outside
-this release.
+Linux has interactive desktop testing. Windows and macOS preview installers have
+native build/startup checks and still need manual testing on real desktops.
+Windows builds are unsigned; macOS builds are ad-hoc signed without notarization.
+See [the installation guide](INSTALL.md) for downloads and platform limitations.
+Mobile apps and paid hosting are outside this release.
 
 ## First reading
 

@@ -25,7 +25,7 @@ EPUB's internal title, which is what the Kindle library shows.
 from __future__ import annotations
 
 import argparse
-import fcntl
+from process_lock import acquire, release
 import getpass
 import io
 import json
@@ -249,10 +249,9 @@ class Lock:
 
     def __enter__(self):
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        self.f = LOCK_PATH.open("w")
-        flags = fcntl.LOCK_EX if self.wait else fcntl.LOCK_EX | fcntl.LOCK_NB
+        self.f = LOCK_PATH.open("a+")
         try:
-            fcntl.flock(self.f, flags)
+            acquire(self.f, blocking=self.wait)
         except BlockingIOError:
             self.f.close()
             return False
@@ -260,7 +259,7 @@ class Lock:
 
     def __exit__(self, *exc):
         if not self.f.closed:
-            fcntl.flock(self.f, fcntl.LOCK_UN)
+            release(self.f)
             self.f.close()
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -59,7 +60,7 @@ class PiSelection:
         self.folder = Path(__file__).resolve().parent.parent / "agent"
 
     def select(self, request, *, provider, model, key):
-        runtime = self.folder / "runtime/node"
+        runtime = self.folder / ('runtime/node.exe' if os.name == 'nt' else 'runtime/node')
         node = str(runtime) if runtime.is_file() else shutil.which("node")
         script = self.folder / "dist/reader-agent.mjs"
         if not node or not script.is_file():
@@ -91,7 +92,7 @@ class PiSelection:
 
 class PiTextReview(PiSelection):
     def review(self, candidate, article, *, model, key, timeout=105):
-        runtime = self.folder / 'runtime/node'
+        runtime = self.folder / ('runtime/node.exe' if os.name == 'nt' else 'runtime/node')
         node = str(runtime) if runtime.is_file() else shutil.which('node')
         script = self.folder / 'dist/reader-agent.mjs'
         if not node or not script.is_file():

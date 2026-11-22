@@ -15,7 +15,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parent
 APPS = ("raindrop-kindle", "youtube-kindle")
-RUNTIME = ("ai_client.py", "epub_writer.py", "raindrop_kindle.py", "youtube_kindle.py", "requirements.txt")
+RUNTIME = ("ai_client.py", "epub_writer.py", "process_lock.py", "raindrop_kindle.py", "youtube_kindle.py", "requirements.txt")
 
 
 def run(*args):

@@ -19,11 +19,11 @@ def seed(store):
           "[2:30] Quib27 asks your selected model to keep concrete details: the numbers that support an argument, the examples that make an idea understandable, and the limits that stop a conclusion from sounding more certain than it is.",
           "[5:10] Your interests guide where the summary spends its words. The source remains the authority. Timestamp links in summaries of real videos let you return to the relevant moment and hear it for yourself.",
           "[7:45] You choose the length. A short edition can offer a useful overview; a longer one can preserve more of the original reasoning. Either way, the aim is a complete, readable story.",
-          "This is an illustrative sample, not a summary of an actual video. Connect a YouTube channel in Sources to prepare your own edition."]),
+          "This is an illustrative sample, not a summary of an actual video. Connect a YouTube channel in Connections to prepare your own edition."]),
         ("article", "Your reading, at your pace", "A note on the routine",
          "Start with a small edition and a delivery time that fits the day you want to have.",
          ["A reading habit works best when it asks something reasonable of you. Twenty minutes of good material is often more inviting than an endless feed.",
-          "In Settings, set your reading budget and how much detail you want in each summary. In Delivery, choose when an edition should be prepared and whether it should arrive by email or on your Kindle.",
+          "In Settings, set your reading budget and how much detail you want in each summary. In Settings → Delivery, choose when an edition should be prepared and whether it should arrive by email or on your Kindle.",
           "The laptop does the work, so it needs to be awake and connected. If it misses a scheduled time, it can catch up when you next open the app. You can also prepare an edition whenever you like.",
           "There is no reward for clearing everything. Save a piece you want to return to, mark something read when you have finished, and let the rest wait."]),
     ]

@@ -7,3 +7,4 @@ youtube-transcript-api==1.2.5
 pillow==13.0.0
 ddgs==9.16.1
 primp==2.0.1
+tzdata==2025.3

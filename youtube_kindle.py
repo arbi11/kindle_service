@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import fcntl
+from process_lock import acquire
 import json
 import logging
 import os
@@ -239,9 +239,9 @@ class Lock:
 
     def __enter__(self):
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        self.f = LOCK_PATH.open("w")
+        self.f = LOCK_PATH.open("a+")
         try:
-            fcntl.flock(self.f, fcntl.LOCK_EX if self.wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire(self.f, blocking=self.wait)
         except BlockingIOError:
             self.f.close()
             return False

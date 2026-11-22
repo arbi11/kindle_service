@@ -1,0 +1,75 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-22.04
+            python_arch: x64
+          - name: windows-x64
+            runner: windows-2025
+            python_arch: x64
+          - name: macos-arm64
+            runner: macos-15
+            python_arch: arm64
+          - name: macos-x64
+            runner: macos-15-intel
+            python_arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: requirements-desktop.txt
+      - name: Install Linux desktop libraries
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=30 install -y --no-install-recommends libegl1 libopengl0 libxcb-cursor0 libxkbcommon-x11-0
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Verify native profile locking
+        run: python -B -m unittest discover -s tests -p test_platform.py -v
+      - name: Build the native runtime and installer
+        run: python build_desktop.py
+      - name: Install and check the packaged application
+        run: python scripts/verify_installer.py
+      - name: Verify native Pi runtime without API requests
+        run: python scripts/smoke_agent.py
+      - name: Upload installers, checksums and build record
+        uses: actions/upload-artifact@v4
+        with:
+          name: quib27-${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            dist/quib27-*.tar.gz
+            dist/quib27-*.deb
+            dist/quib27-*-setup.exe
+            dist/quib27-*.dmg
+            dist/SHA256SUMS-*.txt
+            dist/build-info-*.json

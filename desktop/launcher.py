@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -9,6 +8,7 @@ import signal
 import sys
 import time
 import urllib.request
+from process_lock import acquire
 
 
 def default_root():
@@ -163,7 +163,7 @@ def main():
     lock = (root / "instance.lock").open("a+")
     service = None
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire(lock)
     except BlockingIOError:
         url = existing_runtime(root)
         if not url:
